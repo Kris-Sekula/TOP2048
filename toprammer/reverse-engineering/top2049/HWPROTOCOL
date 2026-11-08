@@ -1,0 +1,73 @@
+TOP2049 USB protocol (incomplete)
+
+
+
+=== COMMANDS ===
+
+00		>= 4 usec delay
+
+01		>= Read a byte from the FPGA at address 0x10 into the buffer register.
+
+07		>= Read the buffer register.
+		   The register is read by sending 07h via bulk out
+		   and reading 64bytes via bulk in.
+
+0Axxyy		>= Write data into the FPGA via the parallel uc->FPGA interface.
+		   xx is the address (clocked via ALE).
+		   yy is the data (clocked via WR).
+
+0Bxx		>= Read a byte from the FPGA at address xx into the buffer register.
+
+0D		>= Unknown
+
+0E110000	>= Put the device ID string into the buffer register.
+		   String length is 16 bytes.
+
+0E12xx00	>= Set VPP, where xx is the voltage.
+		   xx is in centivolt.
+
+0E13xx00	>= Set VCC, where xx is the voltage.
+		   xx is in centivolt.
+
+0E14xx00	>= Load the ZIF socket VPP supply layout.
+		   xx is the layout ID.
+		   (Shift data into the 4 shiftregisters on the left side.
+		    Sends 4 times 8 clock pulses and one strobe.)
+
+0E15xx00	>= Load the ZIF socket VCC supply layout.
+		   xx is the layout ID.
+		   (Shift data into the 3 shiftregisters on the right side.
+		    Sends 3 times 8 clock pulses and one strobe.)
+
+0E16xx00	>= Controls the digital input to the "H" and "L" chips.
+		   These chips control the ZIF socket GND supply.
+		   xx is the ZIF-socket pin that is pulled to GND.
+		   It is calculated as follows:
+		   xx = ZIF_pin_number - 4
+		   Valid ZIF_pin_numbers are:
+		   0,5,14-20,24,26-29,33-35
+		   0 is a special value for not assigning GND to any pin.
+		   If the pin number is 0 (=none), 4 is not subtracted.
+
+0E210000	>= Initiate FPGA programming sequence.
+		   Pulls the ~PROGRAM pin of the FPGA low.
+
+0E220000...	>= Program the FPGA. 60bytes of data is appended.
+
+0E28xx00	>= Enable pullups on the ZIF socket. xx=1 => enable,  xx=0 => disable
+
+10xx		>= Write a byte (xx) to the FPGA at address 0x10.
+
+19		>= Unknown
+
+1B		>= 10 msec delay
+
+34		>= Unknown
+
+38xx		>= Unknown
+
+39		>= Unknown
+
+4Axx		>= Unknown
+
+4Bxx		>= Unknown

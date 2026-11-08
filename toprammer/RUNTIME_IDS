@@ -1,0 +1,42 @@
+*************************************************************
+*** Toprammer                                             ***
+*** Registered Runtime IDs                                ***
+*************************************************************
+
+
+*** Registered RUNTIME_ID MAJOR numbers ***
+
+0x0000		=> Reserved. Do not use.
+0x0001		=> attiny13dip8
+0x0002		=> attiny26dip20
+0x0003		=> atmega8dip28
+0x0004		=> atmega32dip40
+0x0005		=> at89c2051dip20
+0x0006		=> UNUSED
+0x0007		=> m8c_issp
+0x0008		=> unitest
+0x0009		=> w29ee011dip32
+0x000A		=> hm62256dip28
+0x000B		=> m24c16dip8
+0x000C		=> 27cxxxdip28
+0xDE01		=> pic10fxxxdip8
+0xDE02		=> microchip01dip8
+0xDE03		=> microchip01dip14dip20
+0xDE04		=> microchip01dip18
+0xDE05		=> microchip01sip6
+0xDE06		=> microchip01dip40
+0xDE07		=> microchip01dip28
+0xDE08		=> microchip01dip40a
+0xDE09		=> microchip01dip14dip20a
+0xDF01		=> microchip16dip14dip20
+0xDF02		=> microchip16dip28
+0xDF05		=> microchip16sip6
+0xFEFD		=> Reserved. Do not use.
+0xFFFF		=> Reserved. Do not use.
+
+
+*** RUNTIME_ID MINOR numbers ***
+
+0x00		=> Reserved. Do not use.
+0x01 - 0xFE	=> Available for use by FPGA implementations.
+0xFF		=> Reserved. Do not use.

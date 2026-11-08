@@ -1,0 +1,8 @@
+build
+
+*~
+*.swp
+*.pyc
+*.cache.*
+*.bak
+*.orig

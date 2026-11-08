@@ -1,0 +1,16 @@
+#!/bin/sh
+
+test_init()
+{
+	true
+}
+
+test_exit()
+{
+	true
+}
+
+test_run()
+{
+	die "test_run unimplemented"
+}
