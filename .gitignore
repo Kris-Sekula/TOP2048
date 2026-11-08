@@ -6,3 +6,6 @@ __pycache__/
 pes.bin
 *_verify_readback.jed
 *_after_erase.jed
+
+# TopWD build output (published as a release asset instead)
+TopWD/version.dll

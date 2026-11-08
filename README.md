@@ -6,8 +6,9 @@ Software for the TOP2048 / TOP2049 / TOP853 USB universal programmer
 | Folder | Contents |
 |---|---|
 | [`toprammer/`](toprammer/) | [toprammer](https://github.com/mbuesch/toprammer), the open-source programmer software by Michael Büsch, with a direct WinUSB backend for Windows 10/11 x64, GAL16V8 / GAL20V8 / GAL22V10 programming (command line and GUI), and GUI fixes. See [`toprammer/README.md`](toprammer/README.md). |
+| [`TopWD/`](TopWD/) | **TopWD**: a drop-in `version.dll` that lets the original **TopWin** software run on 64-bit Windows 10/11 without the old Jungo `windrvr6.sys` kernel driver. It emulates WinDriver 6.03 in user mode over WinUSB. See [`TopWD/README.md`](TopWD/README.md); the prebuilt DLL is on the [Releases](https://github.com/Kris-Sekula/TOP2048/releases) page. |
 
 The programmer needs Microsoft's WinUSB driver, which you install with [Zadig](https://zadig.akeo.ie/).
-See the installation section of [`toprammer/README.md`](toprammer/README.md).
+Both folders use the same driver, so it only has to be installed once. See the installation section of either README.
 
-toprammer is licensed under the GNU GPL v2 or later; see [`toprammer/COPYING`](toprammer/COPYING).
+Licences: toprammer is GNU GPL v2 or later ([`toprammer/COPYING`](toprammer/COPYING)); TopWD is MIT ([`TopWD/LICENSE`](TopWD/LICENSE)).

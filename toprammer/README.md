@@ -7,7 +7,7 @@ This folder is a copy of [**toprammer**](https://github.com/mbuesch/toprammer) (
 
 It also fixes several GUI annoyances and removes the deprecated `pkg_resources` dependency.
 
-> If you only need the original **TopWin** software running on 64-bit Windows, see the companion project **TopWD**. It's a drop-in `version.dll` that replaces TopWin's old Jungo WinDriver kernel driver. TopWD and this toprammer fork both use the same WinUSB driver, so they can be used side by side (but not at the same time).
+> If you only need the original **TopWin** software running on 64-bit Windows, see the companion project **[TopWD](../TopWD/)** in this repository. It's a drop-in `version.dll` that replaces TopWin's old Jungo WinDriver kernel driver. TopWD and this toprammer fork both use the same WinUSB driver, so they can be used side by side (but not at the same time).
 
 ---
 
