@@ -22,13 +22,24 @@
 
 from .util import *
 from .command_queue import *
-try:
-	import usb.core
-	import usb.util
-except (ImportError) as e:
-	print("Python USB (PyUSB) support module not found.\n"
-	      "Please install python3-usb.")
-	sys.exit(1)
+import os
+
+# On Windows talk to WinUSB directly instead of going through libusb:
+# the TOP programmer reports 25 configurations but has only one, and
+# libusb on Windows refuses to enumerate it. Set TOPRAMMER_LIBUSB=1 to
+# force the PyUSB/libusb path anyway.
+_useWinUsb = (os.name == "nt" and not os.environ.get("TOPRAMMER_LIBUSB"))
+
+if _useWinUsb:
+	from .winusb_direct import find_devices as _winusbFind, WinUsbError
+else:
+	try:
+		import usb.core
+		import usb.util
+	except (ImportError) as e:
+		print("Python USB (PyUSB) support module not found.\n"
+		      "Please install python3-usb.")
+		sys.exit(1)
 
 
 class FoundUSBDev(object):
@@ -43,8 +54,11 @@ class HardwareAccessUSB(CommandQueue):
 	@classmethod
 	def scan(cls, checkCallback):
 		"Scan for devices. Returns a list of FoundUSBDev()."
-		devices = list(usb.core.find(find_all = True,
-					     custom_match = checkCallback))
+		if _useWinUsb:
+			devices = _winusbFind(checkCallback)
+		else:
+			devices = list(usb.core.find(find_all = True,
+						     custom_match = checkCallback))
 		devices = [ FoundUSBDev(dev) for dev in devices ]
 		return devices
 
@@ -59,6 +73,21 @@ class HardwareAccessUSB(CommandQueue):
 		self.__initUSB()
 
 	def __initUSB(self):
+		if _useWinUsb:
+			try:
+				self.usbdev.open()
+				self.bulkOut = self.usbdev.bulkEndpoint(dirIn = False)
+				self.bulkIn = self.usbdev.bulkEndpoint(dirIn = True)
+				if self.bulkIn is None or self.bulkOut is None:
+					raise TOPException("Did not find all USB EPs")
+				for ep in (self.bulkIn, self.bulkOut):
+					try:
+						self.usbdev.clearHalt(ep.bEndpointAddress)
+					except WinUsbError:
+						pass
+			except WinUsbError as e:
+				raise TOPException("USB error: " + str(e))
+			return
 		try:
 			# Find the endpoints
 			self.bulkOut = None
@@ -106,6 +135,9 @@ class HardwareAccessUSB(CommandQueue):
 
 	def shutdown(self):
 		"Shutdown the USB connection"
+		if _useWinUsb:
+			self.usbdev.close()
+			return
 		try:
 			usb.util.dispose_resources(self.usbdev)
 		except (usb.core.USBError) as e:
@@ -124,7 +156,7 @@ class HardwareAccessUSB(CommandQueue):
 			if nrWritten != len(data):
 				raise TOPException("USB bulk write error: "
 					"short write")
-		except (usb.core.USBError) as e:
+		except (WinUsbError if _useWinUsb else usb.core.USBError) as e:
 			raise TOPException("USB bulk write error: " + str(e))
 
 	def receive(self, size):
@@ -142,6 +174,6 @@ class HardwareAccessUSB(CommandQueue):
 			if self.doRawDump:
 				print("Received data:")
 				dumpMem(data)
-		except (usb.core.USBError) as e:
+		except (WinUsbError if _useWinUsb else usb.core.USBError) as e:
 			raise TOPException("USB bulk read error: " + str(e))
 		return data
