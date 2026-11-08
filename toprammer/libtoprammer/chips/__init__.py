@@ -16,6 +16,7 @@ from .attiny25dip8 import *
 from .attiny26dip20 import *
 from .attiny45dip8 import *
 from .attiny85dip8 import *
+from .gal import *
 from .hm62256dip28 import *
 from .m24cxxdip8 import *
 from .m8cissp import *

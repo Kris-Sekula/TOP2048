@@ -1,0 +1,20 @@
+GAL20V8
+TEST20V8
+
+A   B   C   D   E   F   G   H   NC  NC  NC  GND
+NC  NC  AND NAN OR  NOR XOR MUX INV MAJ NC  VCC
+
+AND   = A * B
+/NAN  = A * B
+OR    = A + B
+/NOR  = A + B
+XOR   = A * /B + /A * B
+MUX   = E * /G + F * G
+INV   = /H
+MAJ   = A * B + A * C + B * C
+
+DESCRIPTION
+TOP2049 / toprammer GAL20V8 test design (combinational).
+Pin 15 AND = A*B, 16 NAND, 17 OR = A+B, 18 NOR, 19 XOR = A^B,
+20 MUX = G ? F : E, 21 INV = /H, 22 MAJ = majority(A,B,C).
+Inputs: A..H = pins 1..8.

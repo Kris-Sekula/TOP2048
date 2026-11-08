@@ -1,0 +1,25 @@
+GAL22V10
+TEST22V
+
+Clock A   B   C   D   E   F   G    H   NC  NC GND
+NC    AND NAN OR  NOR XOR MUX INV  Q0  Q1  MAJ VCC
+
+AND   = A * B
+/NAN  = A * B
+OR    = A + B
+/NOR  = A + B
+XOR   = A * /B + /A * B
+MUX   = E * /G + F * G
+INV   = /H
+MAJ   = A * B + A * C + B * C
+Q0.R  = /Q0
+Q1.R  = Q1 * /Q0 + /Q1 * Q0
+AR    = D
+SP    = GND
+
+DESCRIPTION
+TOP2049 / toprammer GAL22V10 test design.
+Pin 14 AND = A*B, 15 NAND, 16 OR = A+B, 17 NOR, 18 XOR = A^B,
+19 MUX = G ? F : E, 20 INV = /H, 23 MAJ = majority(A,B,C).
+Pins 21/22 (Q0/Q1) form a 2-bit counter clocked on pin 1;
+D (pin 5) high = asynchronous reset of the counter.
