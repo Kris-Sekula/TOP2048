@@ -1,0 +1,8 @@
+*~
+*.swp
+*.pyc
+__pycache__/
+*.log
+pes.bin
+*_verify_readback.jed
+*_after_erase.jed

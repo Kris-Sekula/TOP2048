@@ -1,0 +1,13 @@
+# Store text files with LF in the repository and keep LF in the working
+# copy on every OS (Python, the shebang scripts and Git are all happy with
+# LF on Windows; this also silences the "LF will be replaced by CRLF" warnings).
+* text=auto eol=lf
+
+# JEDEC fuse files carry a checksum over every byte of the file (including
+# line endings) - never convert them.
+*.jed -text
+
+# Binary data
+*.bit binary
+*.png binary
+*.bin binary
