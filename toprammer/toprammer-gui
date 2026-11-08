@@ -23,6 +23,7 @@
 
 from libtoprammer.main import *
 from libtoprammer.util import *
+from libtoprammer.chips.gal import specForChipDescription, fusesFromImage, fuseMapText, jedecCreate
 import sys
 import time
 import html
@@ -52,8 +53,10 @@ def htmlEscape(plaintext):
 	return html.escape(plaintext, True)
 
 def getIconPath(name):
-	return pkg_resources.resource_filename("libtoprammer",
-					       "icons/" + name + ".png")
+	# No dependency on the deprecated setuptools pkg_resources
+	import libtoprammer, os
+	return os.path.join(os.path.dirname(os.path.abspath(libtoprammer.__file__)),
+			    "icons", name + ".png")
 
 def getIcon(name):
 	return QIcon(getIconPath(name))
@@ -1733,10 +1736,73 @@ class RAMBufferWidget(ImageBufferWidget):
 		return self.setRawData(interp.getRAM(dontInterpretSections = readRaw))
 
 class FuseBufferWidget(BitBufferWidget):
+	"""Fuse bits. For GAL chips the buffer holds a JEDEC fuse map and is
+	shown as address ranges with bit values instead of per-bit checkboxes."""
+
 	def __init__(self, mainWindow):
 		BitBufferWidget.__init__(self, mainWindow, "fuse bits", "fuseDesc")
+		self.galView = QPlainTextEdit(self)
+		self.galView.setReadOnly(True)
+		self.galView.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+		self.galView.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+		self.layout().addWidget(self.galView, 0, 0)
+		self.galView.hide()
+		self.galImage = None
+
+	def galSpec(self):
+		desc = self.mainWindow.currentChipDescription
+		return specForChipDescription(desc) if desc else None
+
+	def loadImage(self, image):
+		spec = self.galSpec()
+		if spec is None:
+			self.galView.hide()
+			self.bitsAreaScroll.show()
+			self.galImage = None
+			return BitBufferWidget.loadImage(self, image)
+		BitBufferWidget.loadImage(self, None)
+		self.bitsAreaScroll.hide()
+		self.galView.show()
+		if not image:
+			self.galImage = None
+			self.galView.setPlainText("No fuse map loaded.\n\n"
+				"Use 'Load buffer' with a JEDEC (.jed) file, or 'Read chip'.")
+			return
+		# raises TOPException on a bad / wrong-device JEDEC file
+		fuses, security = fusesFromImage(bytes(image), spec)
+		self.galImage = jedecCreate(fuses, spec, security=security)
+		self.galView.setPlainText(fuseMapText(fuses, spec, security))
+
+	def getRawData(self):
+		if self.galSpec() is not None:
+			return self.galImage
+		return BitBufferWidget.getRawData(self)
+
+	def setRawData(self, data):
+		if self.galSpec() is None:
+			return BitBufferWidget.setRawData(self, data)
+		if self.isReadOnly():
+			return False
+		self.loadImage(data)
+		return True
+
+	def compareImage(self, image):
+		"""GAL: compare fuse maps, not file bytes. Returns None for
+		non-GAL chips (generic byte compare is used then)."""
+		spec = self.galSpec()
+		if spec is None:
+			return None
+		want, _ = fusesFromImage(bytes(self.galImage), spec)
+		got, _ = fusesFromImage(bytes(image), spec)
+		bad = [ i for i in range(spec.nrFuses) if want[i] != got[i] ]
+		if not bad:
+			return (True, "")
+		return (False, "%d of %d fuses differ, first at fuse %d" %
+			(len(bad), spec.nrFuses, bad[0]))
 
 	def setDataWithIHexInterpreter(self, interp, readRaw):
+		if self.galSpec() is not None:
+			raise TOPException("GAL fuse maps must be loaded from a JEDEC (.jed) file")
 		return self.setRawData(interp.getFusebits(dontInterpretSections = readRaw))
 
 class LockBufferWidget(BitBufferWidget):
@@ -1829,6 +1895,16 @@ class BufferTabWidget(QTabWidget):
 			except KeyError:
 				continue
 			bufImage = bufferWidget.getRawData()
+			compare = getattr(bufferWidget, "compareImage", None)
+			result = compare(image) if (compare and bufImage and image) else None
+			if result is not None:
+				ok, why = result
+				if not ok:
+					self.mainWindow.console.showMessage(
+						"Chip verify of %s FAILED! %s\n" %\
+						(bufferWidget.getName(), why), bold=True)
+					fail = True
+				continue
 			if not bufImage:
 				if not image:
 					# Both images are empty. Go on...
@@ -1877,6 +1953,20 @@ class BufferTabWidget(QTabWidget):
 
 	def getCurrentBuffer(self):
 		return self.currentWidget()
+
+	def getDataBuffer(self):
+		"""The buffer that Load/Save buffer should use: the current tab if
+		it holds data, otherwise the chip's main data buffer (switching to
+		that tab), so the read-only "chip info" tab is never the target."""
+		cur = self.currentWidget()
+		if cur and cur is not self.infoBuffer and not cur.isReadOnly():
+			return cur
+		for buf in (self.progmemBuffer, self.eepromBuffer, self.fuseBuffer,
+			    self.ramBuffer, self.lockBuffer):
+			if buf.isAvailable() and not buf.isReadOnly():
+				self.setCurrentWidget(buf)
+				return buf
+		return cur
 
 class ChipSelectDialog(QDialog):
 	ALL_VENDORS	= "--- All vendors ---"
@@ -2140,6 +2230,11 @@ class AutorunWidget(QDockWidget):
 		(self.lockbitsCheckBox, row) = self.__addCheckBox(row,
 				chipSupportFlags & Chip.SUPPORT_LOCKWRITE,
 				"Write lock bits", False)
+		# Off: run the selected actions once and return to the main window.
+		# On:  production mode - prompt for the next chip and run again.
+		(self.repeatCheckBox, row) = self.__addCheckBox(row,
+				chipSupportFlags != 0,
+				"Repeat with next chip", False)
 
 		self.runButton = None
 		if chipSupportFlags != 0:
@@ -2148,7 +2243,7 @@ class AutorunWidget(QDockWidget):
 			self.runButton.setIcon(getIcon("run"))
 			self.widget().layout().addWidget(self.runButton, row, 0)
 			row += 1
-			self.runButton.released.connect(self.runNextChip)
+			self.runButton.released.connect(self.startRun)
 
 		self.widget().layout().setRowStretch(row, 99)
 
@@ -2165,6 +2260,29 @@ class AutorunWidget(QDockWidget):
 				"See console messages for details.")
 		self.running = False
 		self.currentAction = -1;
+		self.mainWindow.guiUpdateEnable()
+
+	def __repeat(self):
+		return self.repeatCheckBox is not None and \
+		       self.repeatCheckBox.checkState() == Qt.CheckState.Checked
+
+	def startRun(self):
+		if self.__repeat():
+			self.runNextChip()
+			return
+		self.running = True
+		self.currentAction = 0
+		self.mainWindow.guiUpdateEnable()
+		self.runNextAction()
+
+	def finishRun(self):
+		"All selected actions done for this chip."
+		if self.__repeat():
+			self.runNextChip()
+			return
+		self.running = False
+		self.currentAction = -1
+		self.mainWindow.console.showMessage("Autorun finished.\n", bold=True)
 		self.mainWindow.guiUpdateEnable()
 
 	def runNextChip(self):
@@ -2240,7 +2358,7 @@ class AutorunWidget(QDockWidget):
 						    "Write lock bits"):
 					return
 			action += 1
-		self.runNextChip()
+		self.finishRun()
 
 	def __runAction(self, function, checkbox, actionName):
 		self.currentAction += 1
@@ -2503,8 +2621,12 @@ class MainWindow(QMainWindow):
 					    HwThread.TASK_GENERICTOPCALL,
 					    GenericTopCall("top.hw.runCommandSync(...)", command)))
 
+	def __isGalFuseBuffer(self, bufWidget):
+		return bufWidget is self.bufferTab.fuseBuffer and \
+		       self.bufferTab.fuseBuffer.galSpec() is not None
+
 	def loadBuffer(self):
-		bufWidget = self.bufferTab.getCurrentBuffer()
+		bufWidget = self.bufferTab.getDataBuffer()
 		data = None
 		if not bufWidget:
 			return
@@ -2517,7 +2639,8 @@ class MainWindow(QMainWindow):
 		(fn, selectedFilter) = QFileDialog.getOpenFileName(self,
 			"%s - open file" % bufWidget.getName(),
 			"",
-			"Autodetect file format (*);;"
+			"Autodetect file format (*);;" +
+			("JEDEC fuse file (*.jed);;" if self.__isGalFuseBuffer(bufWidget) else "") +
 			"Intel hex file (*.ihex *.hex);;"
 			"Hex file with ASCII dump (*.ahex);;"
 			"Binary file (*.bin)")
@@ -2533,7 +2656,7 @@ class MainWindow(QMainWindow):
 				(str(fn), str(e.strerror)))
 			return
 		try:
-			if ".bin" in extensions:
+			if ".bin" in extensions or ".jed" in extensions:
 				handler = IO_binary()
 			elif ".ahex" in extensions:
 				handler = IO_ahex()
@@ -2576,7 +2699,7 @@ class MainWindow(QMainWindow):
 			return
 
 	def saveBuffer(self):
-		bufWidget = self.bufferTab.getCurrentBuffer()
+		bufWidget = self.bufferTab.getDataBuffer()
 		if not bufWidget:
 			return
 		data = bufWidget.getRawData()
@@ -2585,6 +2708,7 @@ class MainWindow(QMainWindow):
 		(fn, selectedFilter) = QFileDialog.getSaveFileName(self,
 			"%s - save file" % bufWidget.getName(),
 			"",
+			("JEDEC fuse file (*.jed);;" if self.__isGalFuseBuffer(bufWidget) else "") +
 			"Intel hex file (*.ihex *.hex);;"
 			"Hex file with ASCII dump (*.ahex);;"
 			"Binary file (*)")
@@ -2601,7 +2725,7 @@ class MainWindow(QMainWindow):
 			data = IO_ihex().fromBinary(data)
 		elif ".ahex" in extensions:
 			data = IO_ahex().fromBinary(data)
-		elif not extensions[0]:
+		elif not extensions[0] or ".jed" in extensions:
 			data = IO_binary().fromBinary(data)
 		else:
 			assert(0)

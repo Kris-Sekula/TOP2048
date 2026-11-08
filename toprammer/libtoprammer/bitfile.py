@@ -19,13 +19,12 @@
 """
 
 import sys
+import os
 try:
-	import pkg_resources
+	# Python 3.9+: no dependency on the deprecated setuptools pkg_resources
+	from importlib.resources import files as _resourceFiles
 except ImportError:
-	print("Failed to import the 'pkg_resources' Python module.")
-	print("'pkg_resources' is part of the Python 'setuptools' package.")
-	print("On Debian Linux run:  apt-get install python3-pkg-resources")
-	sys.exit(1)
+	_resourceFiles = None
 
 from libtoprammer.util import *
 
@@ -144,10 +143,18 @@ def bitfileFind(filename):
 		fullpath = path + "/" + filename
 		if __probeFile(fullpath):
 			return fullpath
-	fullpath = pkg_resources.resource_filename("libtoprammer",
-						   "fpga/bin/" + filename)
+	# Next to this module (works regardless of the current directory)
+	fullpath = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+				"fpga", "bin", filename)
 	if __probeFile(fullpath):
 		return fullpath
+	if _resourceFiles is not None:
+		try:
+			fullpath = str(_resourceFiles("libtoprammer").joinpath("fpga", "bin", filename))
+		except Exception:
+			fullpath = None
+		if fullpath and __probeFile(fullpath):
+			return fullpath
 	return None
 
 if __name__ == "__main__":
