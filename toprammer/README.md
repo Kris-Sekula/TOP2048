@@ -240,7 +240,10 @@ python toprammer -c gal22v10 -F design.jed -I bin
 python toprammer -c gal22v10 -f readback.jed -O bin
 
 :: erase
-python toprammer -c gal22v10 -e
+python toprammer -c gal22v10 -x
+
+:: dump a MH74S571 / 74S571 bipolar PROM (512 bytes, data in the low nibble)
+python toprammer -c mh74s571 -e dump.bin
 ```
 
 ### Example designs (`examples/`)
