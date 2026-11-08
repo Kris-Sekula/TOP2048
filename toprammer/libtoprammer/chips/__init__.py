@@ -22,5 +22,6 @@ from .m24cxxdip8 import *
 from .m8cissp import *
 from .microchip16 import *
 from .microchip8 import *
+from .prom74s571 import *
 from .unitest import *
 from .w29ee011dip32 import *

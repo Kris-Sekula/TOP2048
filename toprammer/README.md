@@ -1,9 +1,10 @@
 # toprammer for Windows 10/11 x64, with GAL16V8 / GAL20V8 / GAL22V10 support
 
-This folder is a copy of [**toprammer**](https://github.com/mbuesch/toprammer) (upstream commit `cac51c0`, imported with its full history), Michael Büsch's open-source software for **TOP2049**-family USB universal programmers (USB ID `VID_2471 PID_0853`, also sold as TOP853 / TOP2048), with changes that do two things:
+This folder is a copy of [**toprammer**](https://github.com/mbuesch/toprammer) (upstream commit `cac51c0`, imported with its full history), Michael Büsch's open-source software for **TOP2049**-family USB universal programmers (USB ID `VID_2471 PID_0853`, also sold as TOP853 / TOP2048), with changes that do three things:
 
 1. **Makes toprammer work on 64-bit Windows 10/11**, using Microsoft's signed WinUSB driver. There are no kernel drivers to install, no test-signing mode, and no libusb.
 2. **Adds GAL programming**: GAL16V8 (A/B/D), GAL20V8 (A/B) and GAL22V10, from both the command line and the GUI, using standard JEDEC (`.jed`) fuse files.
+3. **Adds bipolar PROM reading** for the Tesla MH74S571 / 74S571 (512 × 4).
 
 It also fixes several GUI annoyances and removes the deprecated `pkg_resources` dependency.
 
@@ -117,6 +118,24 @@ It also saves `<chip>_verify_readback.jed`. `-C debug=1` additionally reads back
 #### Limitations
 - **GAL22V10 security fuse:** not supported. The published sources disagree on how to set it. A `G1` file still programs and verifies, then reports clearly that the chip is **not** secured.
 - **Atmel ATF16V8 / ATF20V8 / ATF22V10:** detected from their PES and refused. They need a different algorithm.
+
+### 3a. Bipolar PROM reading: MH74S571 / SN74S571 / DM74S571 (`libtoprammer/chips/prom74s571.py`)
+
+Chip ID **`mh74s571`** reads (dumps) 512 × 4 tri-state bipolar PROMs: the Tesla MH74S571 and the TI/National 74S571. It runs at 5 V, through the same generic `unitest` FPGA configuration as the GAL support. The FPGA only drives the address and /CE pins and never the PROM's outputs.
+
+- **Image format:** 512 bytes, one per address, with the 4 data bits in the low nibble. That's the usual format for 4-bit PROM dumps, for example in MAME. A blank PROM reads all 0.
+- **Read check:** every read is done twice and compared, so a badly seated chip is reported instead of producing a silently wrong dump. The summary shows non-zero locations, blown fuses and a checksum.
+- **Pinout** (TI SN74S571 / Tesla):
+
+  | 1 A6 | 2 A5 | 3 A4 | 4 A3 | 5 A0 | 6 A1 | 7 A2 | 8 GND |
+  |---|---|---|---|---|---|---|---|
+  | **9 D3** | **10 D2** | **11 D1** | **12 D0** | **13 /CE** | **14 A8** | **15 A7** | **16 VCC** |
+
+  Toprammer places PROM pin 1 at ZIF 17, with VCC on ZIF 32 and GND on ZIF 24.
+- **Option `swap_a0_a2=1`:** exchanges A0 and A2. Some pinout transcriptions list pins 5–7 as A2, A1, A0. To be sure, compare a dump of a PROM whose contents are published.
+- **Read only.** Blowing the fuses needs VCC raised to about 10.5 V at several hundred mA, and each data pin pulled hard to 0 V (up to about 150 mA). The TOP2049 can't do that: its VCC driver stops at 5 V, it has a single switchable ground, and the data pins are only reachable through FPGA logic outputs. Tesla parts also need a different procedure from National parts. Use a dedicated programmer for writing.
+
+Status: tested against a pin-level 74S571 simulator (`tests/prom74s571_sim_test.py`), not yet on a real chip.
 
 ### 4. GUI changes (`toprammer-gui`)
 
@@ -243,6 +262,7 @@ These run without a programmer:
 
 ```
 python tests/gal_sim_test.py .                 # GAL algorithms vs. pin-level GAL simulators
+python tests/prom74s571_sim_test.py .          # 74S571 PROM reader vs. a pin-level PROM model
 python -I tests/gui_fuse_test.py "%CD%" examples
 python -I tests/gui_autorun_test.py "%CD%"
 python -I tests/gui_loadtarget_test.py "%CD%"
