@@ -137,6 +137,28 @@ Chip ID **`mh74s571`** reads (dumps) 512 × 4 tri-state bipolar PROMs: the Tesla
 
 Status: tested against a pin-level 74S571 simulator (`tests/prom74s571_sim_test.py`), not yet on a real chip.
 
+### 3b. Intel 8755 / 8755A / 8355 reading (`libtoprammer/chips/i8755.py`)
+
+Chip ID **`i8755`** reads the 2 KB ROM of the MCS-85 ROM+I/O chips: the 8755 and 8755A (EPROM) and the 8355 (mask ROM). Like the PROM reader it uses the generic `unitest` FPGA configuration; no custom FPGA design is needed.
+
+- **How it reads:** one 8085-style bus cycle per byte. A0–A7 go on AD0–AD7 and A8–A10 on pins 21–23, with IO/M = 0, /CE1 = 0 and CE2 = 1. ALE is pulsed so the chip latches the address, then AD0–AD7 are released, /RD goes low, and the byte is sampled. The FPGA never drives AD0–AD7 while /RD is low, and never drives READY, the port pins or the supply pins.
+- **Supplies:** VCC (pin 40) at 5 V, and VDD (pin 5) at 5 V from the VPP driver. The datasheet requires VDD = VCC for reading.
+- **Placement:** pin 1 at ZIF pin 5 (VCC on ZIF 44, VDD on ZIF 9, GND on ZIF 24).
+- **Image format:** 2048 bytes, address 0 first. An erased 8755A reads all FF.
+- **Read check:** every read is done twice and compared, as with the PROM reader.
+- **Read only.** Programming an 8755A needs VDD = 25 V (24–26 V) with a 50 ms PROG pulse per byte. The TOP2049's VPP generator stops at 21 V.
+- **Pinout:**
+
+  | 1 PROG,/CE1 | 2 CE2 | 3 CLK | 4 RESET | 5 VDD | 6 READY | 7 IO,/M | 8 /IOR | 9 /RD | 10 /IOW |
+  |---|---|---|---|---|---|---|---|---|---|
+  | **11 ALE** | **12–19 AD0–AD7** | **20 VSS** | **21–23 A8–A10** | **24–31 PA0–PA7** | **32–39 PB0–PB7** | **40 VCC** | | | |
+
+```
+python toprammer -c i8755 -e dump.bin
+```
+
+Status: tested against a pin-level 8755A bus model (`tests/i8755_sim_test.py`), not yet on a real chip.
+
 ### 4. GUI changes (`toprammer-gui`)
 
 - **GAL fuse view.** The "fuse bits" tab was built for AVR-style chips: it showed one checkbox per bit and refused any data over 32 bytes, so loading a GAL file failed. With a GAL selected, the tab now shows the fuse map as **address ranges and bit values**:
@@ -267,6 +289,7 @@ These run without a programmer:
 ```
 python tests/gal_sim_test.py .                 # GAL algorithms vs. pin-level GAL simulators
 python tests/prom74s571_sim_test.py .          # 74S571 PROM reader vs. a pin-level PROM model
+python tests/i8755_sim_test.py .               # 8755A reader vs. a pin-level 8085-bus model
 python -I tests/gui_fuse_test.py "%CD%" examples
 python -I tests/gui_autorun_test.py "%CD%"
 python -I tests/gui_loadtarget_test.py "%CD%"
