@@ -54,7 +54,7 @@ print("console:", msg.strip())
 class TipRecorder:
     text = ""
     @classmethod
-    def showText(cls, pos, text, w=None): cls.text = text
+    def showText(cls, pos, text, w=None, rect=None): cls.text = text
     @classmethod
     def hideText(cls): cls.text = ""
 g.QToolTip = TipRecorder     # the GUI module looks QToolTip up at call time
@@ -72,6 +72,22 @@ assert "Address 0x11" in t2, t2
 assert tipAt(cw * (13 + 3 * 2) + cw, 3 + ch / 2) == "", "tooltip on a matching byte"
 print("tooltip over 0x11 OK (hex and ASCII column), none over a matching byte")
 
+# 3b. plain mouse move (no tooltip timer) shows it too, and fills the details line
+from PyQt6.QtGui import QMouseEvent
+from PyQt6.QtCore import QPointF, Qt
+def moveTo(x, y):
+    TipRecorder.text = ""
+    p = QPointF(x, y)
+    hexw.mouseMoveEvent(QMouseEvent(QEvent.Type.MouseMove, p, QPointF(hexw.mapToGlobal(p.toPoint())),
+                                    Qt.MouseButton.NoButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier))
+    return TipRecorder.text
+assert "Address 0x11" in moveTo(cw * (13 + 3 * 1) + cw, 3 + ch * 1 + ch / 2)
+info = eb.diffInfo.text()
+assert eb.diffInfo.isVisibleTo(eb) and "0x11</b>: chip <b>0x%02X" % chip[0x11] in info and "D1, D3" in info, info
+moveTo(cw * (13 + 3 * 2) + cw, 3 + ch / 2)          # matching byte: back to the cursor byte (0x3)
+assert "0x3</b>" in eb.diffInfo.text(), eb.diffInfo.text()
+print("mouse move shows pop-up at once; details line:", info.replace("<b>", "").replace("</b>", "").replace("&nbsp;", " "))
+
 if shot:
     hexw.resize(hexw.width(), int(ch * 6))
     img = hexw.grab(); img.save(shot)
@@ -88,7 +104,7 @@ print("editing a marked byte to the chip value clears its mark")
 
 # 5. a new verify that passes clears everything; loading a new buffer clears too
 assert not tabs.verifyBuffers({"eeprom": bytes(chip)})
-eb.loadImage(bytes(chip)); assert hexw.mismatches == []
+eb.loadImage(bytes(chip)); assert hexw.mismatches == [] and not eb.diffInfo.isVisibleTo(eb)
 assert tabs.verifyBuffers({"eeprom": bytes(chip)}) and hexw.mismatches == []
 print("passing verify / new buffer clears the marks")
 print("GUI VERIFY TESTS PASSED")
