@@ -154,10 +154,21 @@ Chip ID **`i8755`** reads the 2 KB ROM of the MCS-85 ROM+I/O chips: the 8755 and
   | **11 ALE** | **12–19 AD0–AD7** | **20 VSS** | **21–23 A8–A10** | **24–31 PA0–PA7** | **32–39 PB0–PB7** | **40 VCC** | | | |
 
 ```
-python toprammer -c i8755 -e dump.bin
+python toprammer -c i8755 -e dump.bin     :: dump the 2 KB ROM
+python toprammer -c i8755 -T              :: test the I/O ports
 ```
 
-Status: tested against a pin-level 8755A bus model (`tests/i8755_sim_test.py`), not yet on a real chip.
+**I/O port test (`-T`, or "Run Unit-test" in the GUI).** The FPGA can drive and sample the PA/PB pins in the socket, so both ports are checked from the outside. Port registers are reached as the datasheet describes: an ALE cycle with IO/M = 1 and AD1–AD0 selecting port A, port B, DDR A or DDR B; /IOW writes and /IOR reads. For each port:
+
+1. **After RESET (DDR = 00):** write 00 to the output latch. With the ZIF pull-ups on, the pins must still read 1, so no pin is driven while it should be an input.
+2. **Output (DDR = FF):** write 00, FF, 55, AA, walking 1 and walking 0, and sample all 8 pins after each write.
+3. **Input (DDR = 00):** the FPGA drives the same patterns and the chip reads them through /IOR, plus once through /RD with IO/M = 1.
+4. **Mixed (DDR = 0F, then F0):** output bits must follow the latch while input bits follow what the FPGA drives, so each DDR bit only controls its own pin.
+5. **Shorts:** while one port outputs patterns, the other port's pins (inputs, pulled up) are watched. A pin that goes low exactly when one bit of the other port is driven low is reported as "shorted to PBn".
+
+The FPGA only ever drives a port pin whose DDR bit is 0, and releases the pins before any DDR bit becomes 1, so it never fights the chip. A failing chip gets one line per bad pin, for example `PA3: stuck at 0 / does not drive high as output; reads wrong as input`.
+
+Status: tested against a pin-level 8755A model (`tests/i8755_sim_test.py`), which checks the ROM read, the port test on a good chip, and that a stuck pin, a dead DDR bit and PA/PB shorts are each reported on the right pins only. Not yet tried on a real chip.
 
 ### 4. GUI changes (`toprammer-gui`)
 
@@ -289,7 +300,7 @@ These run without a programmer:
 ```
 python tests/gal_sim_test.py .                 # GAL algorithms vs. pin-level GAL simulators
 python tests/prom74s571_sim_test.py .          # 74S571 PROM reader vs. a pin-level PROM model
-python tests/i8755_sim_test.py .               # 8755A reader vs. a pin-level 8085-bus model
+python tests/i8755_sim_test.py .               # 8755A ROM reader + I/O port test vs. a pin-level model
 python -I tests/gui_fuse_test.py "%CD%" examples
 python -I tests/gui_autorun_test.py "%CD%"
 python -I tests/gui_loadtarget_test.py "%CD%"

@@ -99,13 +99,16 @@ class Chip_i8755(Chip):
 
 	# ---- power ----
 
-	def _powerOn(self):
+	def _powerOn(self, pullups=None):
 		self.applyVCC(False)
 		self.applyVPP(False)
 		self.applyGND(False)
 		self.top.cmdSetVCCVoltage(5)
 		self.top.cmdSetVPPVoltage(5)	# VDD = VCC for reading. Never more.
-		self.top.cmdEnableZifPullups(bool(self._opt("pullups", False)))
+		if pullups is None:
+			pullups = bool(self._opt("pullups", False))
+		self.top.cmdEnableZifPullups(pullups)
+		self.ddr = [ 0, 0 ]		# RESET (below) clears both DDRs
 		# Idle bus state: deselected, no strobes, RESET asserted
 		self.outState = 0
 		self.outEn = 0
@@ -128,7 +131,7 @@ class Chip_i8755(Chip):
 		self.dataMap = [ (regs.index(0x60 + (z - 1) // 8), (z - 1) % 8) for z in zd ]
 
 	def _powerOff(self):
-		self._drive(PIN_AD, False)
+		self._drive(PIN_AD + PIN_PA + PIN_PB, False)
 		self._set({ PIN_RD: 1, PIN_CE1: 1, PIN_CE2: 0, PIN_ALE: 0 })
 		self.applyVPP(False)
 		self.applyVCC(False)
@@ -211,10 +214,170 @@ class Chip_i8755(Chip):
 		return bytes(bytearray(first))
 
 
+	# ---- I/O port test ----
+	#
+	# Register select (latched AD1-AD0): 0 = port A, 1 = port B,
+	# 2 = DDR A, 3 = DDR B. A DDR bit of 1 makes the pin an output.
+	# /IOW writes the selected register (IO/M is ignored), /IOR reads a port.
+	# DDRs cannot be read back. The FPGA only ever drives a port pin whose
+	# DDR bit is 0, so it never fights the chip.
+
+	PORT_PINS = (PIN_PA, PIN_PB)
+
+	def _ioAddress(self, reg):
+		lv = { p: (reg >> i) & 1 for i, p in enumerate(PIN_AD) }
+		lv.update({ PIN_IOM: 1, PIN_CE1: 0, PIN_CE2: 1, PIN_ALE: 1 })
+		self._drive(PIN_AD, True)
+		self._set(lv)
+		self._set({ PIN_ALE: 0 })
+		self._set({ PIN_CLK: 1 })
+		self._set({ PIN_CLK: 0 })
+
+	def _ioWrite(self, reg, value):
+		if reg >= 2:	# DDR: release FPGA drive on bits that become outputs
+			port = reg - 2
+			newOut = [ p for i, p in enumerate(self.PORT_PINS[port]) if (value >> i) & 1 ]
+			self._drive(newOut, False)
+		self._ioAddress(reg)
+		self._set({ p: (value >> i) & 1 for i, p in enumerate(PIN_AD) })
+		self._set({ PIN_IOW: 0 })
+		self._set({ PIN_IOW: 1 })	# the chip takes the data on the rising edge
+		if reg >= 2:
+			self.ddr[reg - 2] = value
+
+	def _sampleNow(self, pins):
+		"""Read the current level of the given package pins (immediate)."""
+		zs = [ self._zif(p) for p in pins ]
+		regs = sorted({ 0x60 + (z - 1) // 8 for z in zs })
+		for r in regs:
+			self.top.cmdFPGARead(r)
+		raw = self.top.cmdReadBufferReg(len(regs))
+		v = 0
+		for i, z in enumerate(zs):
+			byte = byte2int(raw[regs.index(0x60 + (z - 1) // 8)])
+			v |= ((byte >> ((z - 1) % 8)) & 1) << i
+		return v
+
+	def _ioRead(self, port, viaRD=False):
+		self._ioAddress(port)
+		self._drive(PIN_AD, False)
+		strobe = PIN_RD if viaRD else PIN_IOR
+		self._set({ strobe: 0 })
+		v = self._sampleNow(PIN_AD)
+		self._set({ strobe: 1 })
+		return v
+
+	def _drivePort(self, port, mask, value):
+		"""FPGA drives the port pins in mask (only allowed where DDR = 0)."""
+		if mask & self.ddr[port]:
+			raise TOPException("BUG: would drive 8755 port pins that are outputs")
+		pins = self.PORT_PINS[port]
+		self._drive(pins, False)
+		self._set({ p: (value >> i) & 1 for i, p in enumerate(pins) })
+		self._drive([ p for i, p in enumerate(pins) if (mask >> i) & 1 ], True)
+
+	def test(self):
+		names = ("PA", "PB")
+		faults = {}		# "PA3" -> set of problem descriptions
+		def fault(port, bits, what):
+			for i in range(8):
+				if (bits >> i) & 1:
+					faults.setdefault("%s%d" % (names[port], i), set()).add(what)
+		patterns = [ 0x00, 0xFF, 0x55, 0xAA ] + [ 1 << i for i in range(8) ] + \
+			   [ 0xFF ^ (1 << i) for i in range(8) ]
+		steps = 2 * (1 + 2 * len(patterns) + 4)
+		# pulled[victimPort][bit] = patterns (driven on the other port) during
+		# which that input pin read low. Analysed after both ports are done.
+		pulled = [ [ set() for _ in range(8) ] for _ in (0, 1) ]
+		self.progressMeterInit("Testing 8755 I/O ports", steps)
+		n = 0
+		self._powerOn(pullups=True)
+		try:
+			for port in (0, 1):
+				other = 1 - port
+				pins = self.PORT_PINS[port]
+				# 1. After RESET the port is an input: writing 00 to the
+				#    output latch must not reach the pins (pull-ups read 1).
+				self._ioWrite(port, 0x00)
+				got = self._sampleNow(pins)
+				fault(port, 0xFF & ~got, "drives low after RESET / with DDR = 0")
+				n += 1; self.progressMeter(n)
+
+				# 2. Output: DDR = FF, check each pattern on the pins
+				self._ioWrite(2 + port, 0xFF)
+				for pat in patterns:
+					self._ioWrite(port, pat)
+					got = self._sampleNow(pins)
+					fault(port, (got ^ pat) & ~pat, "stuck at 1 / does not drive low as output")
+					fault(port, (got ^ pat) & pat, "stuck at 0 / does not drive high as output")
+					oth = self._sampleNow(self.PORT_PINS[other])
+					for i in range(8):	# other port is input, pulled up
+						if not (oth >> i) & 1:
+							pulled[other][i].add(pat)
+					rb = self._ioRead(port)
+					if rb != got:
+						self.printWarning("%s output %02X: pins show %02X, port reads back %02X" %
+								  (names[port], pat, got, rb))
+					n += 1; self.progressMeter(n)
+
+				# 3. Input: DDR = 00, the FPGA drives the pins, the chip reads
+				self._ioWrite(2 + port, 0x00)
+				for pat in patterns:
+					self._drivePort(port, 0xFF, pat)
+					got = self._ioRead(port)
+					fault(port, got ^ pat, "reads wrong as input")
+					n += 1; self.progressMeter(n)
+				got = self._ioRead(port, viaRD=True)	# RD with IO/M = 1
+				if got != patterns[-1]:
+					fault(port, got ^ patterns[-1], "reads wrong via /RD + IO/M")
+				self._drivePort(port, 0x00, 0)
+
+				# 4. Mixed direction: each DDR bit acts on its own pin only
+				for outMask in (0x0F, 0xF0):
+					inMask = 0xFF & ~outMask
+					for latch, ext in ((0xA5, 0x5A), (0x5A, 0xA5)):
+						self._drivePort(port, 0x00, 0)
+						self._ioWrite(2 + port, outMask)
+						self._ioWrite(port, latch)
+						self._drivePort(port, inMask, ext)
+						got = self._sampleNow(pins)
+						fault(port, (got ^ latch) & outMask, "DDR bit does not make it an output")
+						rb = self._ioRead(port)
+						fault(port, (rb ^ ext) & inMask, "DDR bit does not keep it an input")
+						n += 1; self.progressMeter(n)
+					self._drivePort(port, 0x00, 0)
+					self._ioWrite(2 + port, 0x00)
+		finally:
+			self._powerOff()
+			self.top.cmdEnableZifPullups(False)
+		self.progressMeterFinish()
+		# Shorts between ports: a victim pin that goes low exactly when one
+		# particular aggressor bit is driven low.
+		for victim in (0, 1):
+			for i in range(8):
+				low = pulled[victim][i]
+				if not low or len(low) == len(patterns):
+					continue	# never, or always (stuck: reported above)
+				agg = [ j for j in range(8)
+					if all(not (p >> j) & 1 for p in low) and
+					   all((p >> j) & 1 for p in patterns if p not in low) ]
+				if agg:
+					what = "shorted to %s" % "/".join("%s%d" % (names[1 - victim], j) for j in agg)
+				else:
+					what = "pulled low by some %s patterns (leakage/short?)" % names[1 - victim]
+				fault(victim, 1 << i, what)
+		if faults:
+			lines = [ "%s: %s" % (pin, "; ".join(sorted(w))) for pin, w in sorted(faults.items()) ]
+			self.throwError("I/O port test FAILED on %d pin(s):\n  %s" %
+					(len(faults), "\n  ".join(lines)))
+		self.printInfo("I/O port test passed: all 16 port pins work as outputs "
+			       "and inputs, and each DDR bit controls its own pin")
+
+
 _OPTIONS = (
 	ChipOptionBool("pullups", "Enable the ZIF pull-ups (default off)"),
 )
-_COMMENT = ("READ ONLY. 2048 bytes. Blank 8755A = all FF. Also reads the 8355 "
+_COMMENT = ("READ ONLY. 2048 bytes. Unit-test (-T) checks ports A and B. Blank 8755A = all FF. Also reads the 8355 "
 	    "mask ROM. Programming needs VDD = 25 V, above the TOP2049's 21 V.")
 
 ChipDescription(
