@@ -28,6 +28,7 @@ import sys
 import time
 import html
 import configparser
+import bisect
 try:
 	from PyQt6.QtCore import *
 	from PyQt6.QtGui import *
@@ -1228,6 +1229,15 @@ class HexEditWidget(QWidget):
 		self.fgColor = QColor("#000000")
 		self.cursor0Color = QColor("#A0A07F")
 		self.cursor1Color = QColor("#D0D0AF")
+		self.diffColor = QColor("#FF9A9A")
+		self.diffAsciiColor = QColor("#FFD0D0")
+
+		# Verify result: what was read from the chip, and the offsets
+		# where it differs from the buffer.
+		self.chipData = None
+		self.mismatches = []
+		self.mismatchSet = set()
+		self.setMouseTracking(True)
 
 		font = self.font()
 		font.setFamily("Courier")
@@ -1291,8 +1301,83 @@ class HexEditWidget(QWidget):
 			data = b""
 		assert isinstance(data, (bytes, bytearray))
 		self.data = bytearray(data)
+		self.chipData = None	# new buffer contents: old verify result is stale
+		self.mismatches = []
+		self.mismatchSet = set()
 		self.updateText()
 		self.__setCursor(0, False)
+
+	def setChipData(self, chipData):
+		"""Mark the bytes where the buffer differs from chipData (an image
+		read from the chip). Pass None to remove the marks.
+		Returns the list of differing offsets."""
+		self.chipData = bytes(chipData) if chipData else None
+		self.__updateMismatches()
+		if self.mismatches:
+			self.__setCursor(self.mismatches[0], False)
+		self.repaint()
+		return self.mismatches
+
+	def __updateMismatches(self):
+		if self.chipData is None:
+			self.mismatches = []
+		else:
+			n = min(len(self.data), len(self.chipData))
+			d, c = self.data, self.chipData
+			self.mismatches = [ i for i in range(n) if d[i] != c[i] ]
+		self.mismatchSet = set(self.mismatches)
+
+	def __byteAt(self, pos):
+		"""Byte offset under a widget position (hex or ASCII column), or None."""
+		x, y = pos.x(), pos.y() - 3
+		if y < 0 or not self.data:
+			return None
+		line = int(y // self.charHeight)
+		byteAreaX = self.charWidth * 13
+		asciiAreaX = self.charWidth * (13 + 3 * self.bytesPerLine + 3 - 1)
+		if byteAreaX <= x < byteAreaX + self.charWidth * 3 * self.bytesPerLine:
+			column = int((x - byteAreaX) // (self.charWidth * 3))
+		elif asciiAreaX <= x < asciiAreaX + self.charWidth * self.bytesPerLine:
+			column = int((x - asciiAreaX) // self.charWidth)
+		else:
+			return None
+		offset = line * self.bytesPerLine + column
+		return offset if offset < len(self.data) else None
+
+	def mismatchTooltip(self, offset):
+		"""Rich-text description of one differing byte."""
+		chip, buf = self.chipData[offset], self.data[offset]
+		diff = chip ^ buf
+		def bits(v):
+			out = []
+			for b in range(7, -1, -1):
+				ch = "1" if (v >> b) & 1 else "0"
+				if (diff >> b) & 1:
+					ch = '<b><span style="color:#C00000">%s</span></b>' % ch
+				out.append(ch)
+				if b == 4:
+					out.append("&nbsp;")
+			return "".join(out)
+		wrong = [ "D%d" % b for b in range(8) if (diff >> b) & 1 ]
+		return ('<table cellspacing="0" cellpadding="2" style="font-family:monospace">'
+			'<tr><td colspan="3"><b>Address 0x%X</b></td></tr>'
+			'<tr><td>Chip:</td><td>0x%02X</td><td>%s</td></tr>'
+			'<tr><td>Buffer:</td><td>0x%02X</td><td>%s</td></tr>'
+			'<tr><td>Diff:</td><td>0x%02X</td><td>%s</td></tr>'
+			'<tr><td colspan="3">Differing bit%s: %s</td></tr>'
+			'</table>' % (offset, chip, bits(chip), buf, bits(buf), diff, bits(diff),
+				      "s" if len(wrong) > 1 else "", ", ".join(wrong)))
+
+	def event(self, e):
+		if e.type() == QEvent.Type.ToolTip:
+			offset = self.__byteAt(e.pos())
+			if offset is not None and offset in self.mismatchSet:
+				QToolTip.showText(e.globalPos(), self.mismatchTooltip(offset), self)
+			else:
+				QToolTip.hideText()
+				e.ignore()
+			return True
+		return QWidget.event(self, e)
 
 	def charInput(self, char):
 		if not self.data:
@@ -1319,6 +1404,8 @@ class HexEditWidget(QWidget):
 				self.cursorNibble = 0
 			else:
 				self.__setCursor(self.cursorByte + 1, False)
+		if self.chipData is not None:
+			self.__updateMismatches()
 		self.updateText()
 
 	def keyPressEvent(self, e):
@@ -1436,6 +1523,25 @@ class HexEditWidget(QWidget):
 		# Background
 		p.fillRect(0, 0, self.width(), self.height(), self.bgColor)
 
+		# Bytes that differ from the chip (after a failed verify)
+		if self.mismatches:
+			r = e.rect()
+			firstLine = max(0, (r.top() - 3) // self.charHeight)
+			lastLine = (r.bottom() - 3) // self.charHeight + 1
+			lo, hi = firstLine * self.bytesPerLine, (lastLine + 1) * self.bytesPerLine
+			k = bisect.bisect_left(self.mismatches, lo)
+			while k < len(self.mismatches) and self.mismatches[k] < hi:
+				off = self.mismatches[k]
+				col, line = off % self.bytesPerLine, off // self.bytesPerLine
+				y = self.charHeight * line + 3
+				x = self.charWidth * (13 + 3 * col)
+				p.fillRect(round(x - self.charWidth * 0.5), y,
+					   round(self.charWidth * 3), self.charHeight, self.diffColor)
+				x = self.charWidth * (13 + 3 * self.bytesPerLine + 3 - 1 + col)
+				p.fillRect(round(x), y, round(self.charWidth), self.charHeight,
+					   self.diffAsciiColor)
+				k += 1
+
 		# Cursor
 		if self.data and self.hasFocus():
 			(x, y) = self.__cursorUpperLeftEdge()
@@ -1470,6 +1576,9 @@ class HexEdit(QScrollArea):
 
 	def getData(self):
 		return self.widget().getData()
+
+	def setChipData(self, chipData):
+		return self.widget().setChipData(chipData)
 
 class BufferWidget(QWidget):
 	def __init__(self, mainWindow, name):
@@ -1610,6 +1719,10 @@ class ImageBufferWidget(BufferWidget):
 
 	def loadImage(self, image):
 		self.browser.setData(image)
+
+	def markDifferences(self, chipImage):
+		"""Highlight buffer bytes that differ from chipImage; None clears."""
+		return self.browser.setChipData(chipImage)
 
 	def getRawData(self):
 		return self.browser.getData()
@@ -1936,14 +2049,30 @@ class BufferTabWidget(QTabWidget):
 					"with the actual device image size (0x%X).\n" %\
 					(bufferWidget.getName(), compareSize,
 					 len(bufImage), len(image)))
+			mark = getattr(bufferWidget, "markDifferences", None)
 			if bufImage[:compareSize] != image[:compareSize]:
+				diffs = mark(image) if mark else []
+				where = ""
+				if diffs:
+					shown = ", ".join("0x%X" % a for a in diffs[:8])
+					if len(diffs) > 8:
+						shown += ", ..."
+					where = " %d byte%s differ%s (%s). They are highlighted " \
+						"in the %s tab; hover over one to see the chip " \
+						"and buffer values." % (
+						len(diffs), "s" if len(diffs) != 1 else "",
+						"" if len(diffs) != 1 else "s", shown,
+						bufferWidget.getName())
+					self.setCurrentWidget(bufferWidget)
 				self.mainWindow.console.showMessage(
 					"Chip verify of %s FAILED! "
-					"Image data mismatch.\n" %\
-					bufferWidget.getName(),
+					"Image data mismatch.%s\n" %\
+					(bufferWidget.getName(), where),
 					bold=True)
 				fail = True
 				continue
+			if mark:
+				mark(None)
 		if fail:
 			self.mainWindow.console.setStatus(Console.STAT_ERROR)
 		else:

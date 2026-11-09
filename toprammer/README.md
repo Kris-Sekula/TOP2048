@@ -148,6 +148,7 @@ Status: tested against a pin-level 74S571 simulator (`tests/prom74s571_sim_test.
   Other chips keep the original checkbox view.
 - **JEDEC load and save.** "Load buffer" and "Save buffer" get a *JEDEC fuse file (\*.jed)* filter when a GAL is selected.
 - **Fuse-level verify.** For GALs, "Verify" compares the actual fuses rather than file bytes. A `.jed` from GALasm and the chip's own readout have different headers but are the same fuse map. A mismatch reports something like "*1 of 5892 fuses differ, first at fuse 5*".
+- **Verify shows which bytes are wrong.** When a verify of an EPROM, EEPROM, PROM or RAM image fails, the GUI switches to that buffer tab, highlights every differing byte in red (hex and ASCII columns), and moves the cursor to the first one. The console lists the count and the first addresses. Hover over a highlighted byte to see the chip value, the buffer value and their XOR in hex and binary, with the wrong bits marked (e.g. "*Differing bits: D1, D3*"). Editing a byte to match removes its mark; loading new data or a passing verify clears them all.
 - **Autorun no longer loops.** The Run button used to start over after the last step with "*Please insert a new chip…*". A new **"Repeat with next chip"** checkbox, unticked by default, controls this:
   - **unticked:** Run does the ticked steps once, with no prompts, and returns to the main window;
   - **ticked:** the original batch behaviour.
@@ -269,6 +270,7 @@ python tests/prom74s571_sim_test.py .          # 74S571 PROM reader vs. a pin-le
 python -I tests/gui_fuse_test.py "%CD%" examples
 python -I tests/gui_autorun_test.py "%CD%"
 python -I tests/gui_loadtarget_test.py "%CD%"
+python -I tests/gui_verify_test.py "%CD%"
 ```
 
 - **`gal_sim_test.py`** drives `gal.py` through a fake TOP2049 into simulated GAL16V8, GAL20V8 and GAL22V10 chips. Each is simulated twice: once as a chip that samples data on the rising clock edge, once on the falling edge.
@@ -279,7 +281,7 @@ python -I tests/gui_loadtarget_test.py "%CD%"
   - the FPGA never drives the pin carrying VPP, VCC or GND.
 
   It reproduced the real off-by-one failure before that fix.
-- **`gui_*_test.py`** run the real Qt widgets offscreen. They cover the GAL fuse tab and verify, Autorun single-run and repeat, and the Load/Save buffer targets.
+- **`gui_*_test.py`** run the real Qt widgets offscreen. They cover the GAL fuse tab and verify, Autorun single-run and repeat, the Load/Save buffer targets, and the highlighted bytes and hover pop-up after a failed verify.
 
 ---
 
