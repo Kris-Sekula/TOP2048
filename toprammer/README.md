@@ -1,12 +1,15 @@
-# toprammer for Windows 10/11 x64, with GAL16V8 / GAL20V8 / GAL22V10 support
+# toprammer for Windows 10/11 x64, with support for more chips
 
-This folder is a copy of [**toprammer**](https://github.com/mbuesch/toprammer) (upstream commit `cac51c0`, imported with its full history), Michael Büsch's open-source software for **TOP2049**-family USB universal programmers (USB ID `VID_2471 PID_0853`, also sold as TOP853 / TOP2048), with changes that do three things:
+This folder is a copy of [**toprammer**](https://github.com/mbuesch/toprammer) (upstream commit `cac51c0`, imported with its full history), Michael Büsch's open-source software for **TOP2049**-family USB universal programmers (USB ID `VID_2471 PID_0853`, also sold as TOP853 / TOP2048), with these changes:
 
 1. **Makes toprammer work on 64-bit Windows 10/11**, using Microsoft's signed WinUSB driver. There are no kernel drivers to install, no test-signing mode, and no libusb.
 2. **Adds GAL programming**: GAL16V8 (A/B/D), GAL20V8 (A/B) and GAL22V10, from both the command line and the GUI, using standard JEDEC (`.jed`) fuse files.
 3. **Adds bipolar PROM reading** for the Tesla MH74S571 / 74S571 (512 × 4).
+4. **Adds Intel 8755 / 8755A / 8355 support**: reading the 2 KB ROM, and a unit-test of the two 8-bit I/O ports.
+5. **Improves the GUI:** after a failed verify, the wrong bytes are highlighted, with a pop-up showing chip and buffer values in hex and binary. Also fixes to the fuse tab, Autorun and Load buffer.
+6. **Removes the deprecated `pkg_resources` dependency.**
 
-It also fixes several GUI annoyances and removes the deprecated `pkg_resources` dependency.
+All the new chip support uses toprammer's existing generic "unitest" FPGA configuration, so no FPGA design changes were needed.
 
 > If you only need the original **TopWin** software running on 64-bit Windows, see the companion project **[TopWD](../TopWD/)** in this repository. It's a drop-in `version.dll` that replaces TopWin's old Jungo WinDriver kernel driver. TopWD and this toprammer fork both use the same WinUSB driver, so they can be used side by side (but not at the same time).
 
@@ -23,6 +26,12 @@ Programmer: TOP2049-compatible unit, firmware string `top2049 ver1.08`, on Windo
 | Lattice GAL16V8A-15LP (early) | `01 02 1A A1 …` algorithm 2 | 16.5 V, 10 ms | ✅ Verify OK | ✅ |
 | Lattice GAL20V8A/B | `00 03 3A A1 …` algorithm 3 | 14.5 V, 40 ms | ✅ Verify OK | ✅ |
 | Lattice GAL22V10 | `00 02 48 A1 …` algorithm 2 | 14.5 V, 40 ms | ✅ Verify OK | ✅ |
+
+| Chip | Function | Result |
+|---|---|---|
+| Tesla MH74S571 (512 × 4 bipolar PROM) | Read (`-c mh74s571 -e`) | ✅ Reads correctly |
+| Intel 8755 | I/O port unit-test (`-c i8755 -T`) | ✅ Passes; fails with an empty socket |
+| Intel 8755 / 8755A / 8355 | ROM read (`-c i8755 -e`) | Simulator only so far |
 
 The original EPROM support also works on Windows through the new USB backend.
 
@@ -51,7 +60,7 @@ python -m libtoprammer.winusb_direct
 
 Upstream used setuptools' `pkg_resources` to locate FPGA bitfiles and GUI icons. It's deprecated, prints a warning on every run, and was removed in setuptools 81. Both lookups now resolve paths relative to the `libtoprammer` package, with an `importlib.resources` fallback. They work from any working directory.
 
-### 3. GAL support (`libtoprammer/chips/gal.py`)
+### 3. GAL programming (`libtoprammer/chips/gal.py`)
 
 New chip IDs: **`gal16v8`**, **`gal20v8`**, **`gal22v10`**.
 
@@ -119,7 +128,7 @@ It also saves `<chip>_verify_readback.jed`. `-C debug=1` additionally reads back
 - **GAL22V10 security fuse:** not supported. The published sources disagree on how to set it. A `G1` file still programs and verifies, then reports clearly that the chip is **not** secured.
 - **Atmel ATF16V8 / ATF20V8 / ATF22V10:** detected from their PES and refused. They need a different algorithm.
 
-### 3a. Bipolar PROM reading: MH74S571 / SN74S571 / DM74S571 (`libtoprammer/chips/prom74s571.py`)
+### 4. Bipolar PROM reading: MH74S571 / SN74S571 / DM74S571 (`libtoprammer/chips/prom74s571.py`)
 
 Chip ID **`mh74s571`** reads (dumps) 512 × 4 tri-state bipolar PROMs: the Tesla MH74S571 and the TI/National 74S571. It runs at 5 V, through the same generic `unitest` FPGA configuration as the GAL support. The FPGA only drives the address and /CE pins and never the PROM's outputs.
 
@@ -135,9 +144,9 @@ Chip ID **`mh74s571`** reads (dumps) 512 × 4 tri-state bipolar PROMs: the Tesla
 - **Option `swap_a0_a2=1`:** exchanges A0 and A2. Some pinout transcriptions list pins 5–7 as A2, A1, A0. To be sure, compare a dump of a PROM whose contents are published.
 - **Read only.** Blowing the fuses needs VCC raised to about 10.5 V at several hundred mA, and each data pin pulled hard to 0 V (up to about 150 mA). The TOP2049 can't do that: its VCC driver stops at 5 V, it has a single switchable ground, and the data pins are only reachable through FPGA logic outputs. Tesla parts also need a different procedure from National parts. Use a dedicated programmer for writing.
 
-Status: tested against a pin-level 74S571 simulator (`tests/prom74s571_sim_test.py`), not yet on a real chip.
+Status: reading works on real Tesla MH74S571 chips in a TOP2049. It is also covered by a pin-level 74S571 simulator (`tests/prom74s571_sim_test.py`).
 
-### 3b. Intel 8755 / 8755A / 8355 reading (`libtoprammer/chips/i8755.py`)
+### 5. Intel 8755 / 8755A / 8355 reading (`libtoprammer/chips/i8755.py`)
 
 Chip ID **`i8755`** reads the 2 KB ROM of the MCS-85 ROM+I/O chips: the 8755 and 8755A (EPROM) and the 8355 (mask ROM). Like the PROM reader it uses the generic `unitest` FPGA configuration; no custom FPGA design is needed.
 
@@ -170,7 +179,7 @@ The FPGA only ever drives a port pin whose DDR bit is 0, and releases the pins b
 
 Status: the port test passes on a real 8755 in a TOP2049 (about 1 second) and fails with an empty socket. On that chip, a port set as output reads back the same value that's on its pins. The pin-level model (`tests/i8755_sim_test.py`) also checks the ROM read, and that a stuck pin, a dead DDR bit and PA/PB shorts are each reported on the right pins only. The ROM dump has not yet been compared against a chip with known contents.
 
-### 4. GUI changes (`toprammer-gui`)
+### 6. GUI changes (`toprammer-gui`)
 
 - **GAL fuse view.** The "fuse bits" tab was built for AVR-style chips: it showed one checkbox per bit and refused any data over 32 bytes, so loading a GAL file failed. With a GAL selected, the tab now shows the fuse map as **address ranges and bit values**:
   - one product term per line (`0000-0043 PT0 1111…`);
@@ -196,7 +205,7 @@ Status: the port test passes on a real 8755 in a TOP2049 (about 1 second) and fa
 
   A data tab you've selected yourself is still respected.
 
-### 5. Windows launchers
+### 7. Windows launchers
 `toprammer`, `toprammer-gui` and `toprammer-layout` have no `.py` extension on purpose. That's the Unix convention for installed commands: `setup.py` installs them as `scripts`, and the `#!/usr/bin/env python3` line selects the interpreter. On Windows that convention doesn't apply, so two small launchers are included:
 
 - **`toprammer-gui.pyw`**: double-click it to start the GUI with no console window.
