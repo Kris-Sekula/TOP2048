@@ -2180,19 +2180,43 @@ class BufferTabWidget(QTabWidget):
 RECENT_CHIPS_MAX = 10
 
 def guiSettings():
-	"Persistent per-user GUI settings (registry on Windows, ini file elsewhere)."
-	return QSettings("toprammer", "toprammer-gui")
+	"""Persistent per-user GUI settings, in a plain text ini file on every OS:
+	  Windows: %APPDATA%\\toprammer\\toprammer-gui.ini
+	  Linux:   ~/.config/toprammer/toprammer-gui.ini
+	  macOS:   ~/.config/toprammer/toprammer-gui.ini"""
+	return QSettings(QSettings.Format.IniFormat, QSettings.Scope.UserScope,
+			 "toprammer", "toprammer-gui")
+
+def guiSettingsFile():
+	return guiSettings().fileName()
+
+def _migrateNativeSettings(settings):
+	"Earlier builds kept the list in the Windows registry: move it over once."
+	if settings.contains("recentChips"):
+		return
+	try:
+		native = QSettings("toprammer", "toprammer-gui")
+		if native.format() == QSettings.Format.IniFormat or not native.contains("recentChips"):
+			return
+		settings.setValue("recentChips", native.value("recentChips", ""))
+		native.remove("recentChips")
+	except Exception:
+		pass
 
 def recentChipIDs():
 	"Most recently used chip IDs, newest first."
-	value = guiSettings().value("recentChips", "")
+	settings = guiSettings()
+	_migrateNativeSettings(settings)
+	value = settings.value("recentChips", "")
 	if isinstance(value, (list, tuple)):
 		value = ",".join(str(v) for v in value)
 	return [ c for c in str(value or "").split(",") if c ][:RECENT_CHIPS_MAX]
 
 def addRecentChipID(chipID):
 	ids = [ chipID ] + [ c for c in recentChipIDs() if c != chipID ]
-	guiSettings().setValue("recentChips", ",".join(ids[:RECENT_CHIPS_MAX]))
+	settings = guiSettings()
+	settings.setValue("recentChips", ",".join(ids[:RECENT_CHIPS_MAX]))
+	settings.sync()
 
 class ChipSelectDialog(QDialog):
 	ALL_VENDORS	= "--- All vendors ---"
