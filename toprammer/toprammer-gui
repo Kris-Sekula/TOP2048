@@ -1689,6 +1689,10 @@ class InfoBufferWidget(BufferWidget):
 			font = label.font()
 			font.setBold(True)
 			label.setFont(font)
+			# Wrap long texts (e.g. the chip comment) instead of forcing
+			# the whole window to be at least that wide.
+			label.setWordWrap(True)
+			label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
 			self.layout().addWidget(label, y, 2)
 			return label
 
@@ -1698,7 +1702,7 @@ class InfoBufferWidget(BufferWidget):
 		self.chipSig = addLabel("Chip signature bytes:", 3)
 		self.maintainer = addLabel("Chip maintainer:", 4)
 
-		self.layout().setColumnStretch(3, 99)
+		self.layout().setColumnStretch(2, 99)
 		self.layout().setRowStretch(5, 99)
 
 		self.clear()
@@ -2173,34 +2177,65 @@ class BufferTabWidget(QTabWidget):
 				return buf
 		return cur
 
+RECENT_CHIPS_MAX = 10
+
+def guiSettings():
+	"Persistent per-user GUI settings (registry on Windows, ini file elsewhere)."
+	return QSettings("toprammer", "toprammer-gui")
+
+def recentChipIDs():
+	"Most recently used chip IDs, newest first."
+	value = guiSettings().value("recentChips", "")
+	if isinstance(value, (list, tuple)):
+		value = ",".join(str(v) for v in value)
+	return [ c for c in str(value or "").split(",") if c ][:RECENT_CHIPS_MAX]
+
+def addRecentChipID(chipID):
+	ids = [ chipID ] + [ c for c in recentChipIDs() if c != chipID ]
+	guiSettings().setValue("recentChips", ",".join(ids[:RECENT_CHIPS_MAX]))
+
 class ChipSelectDialog(QDialog):
 	ALL_VENDORS	= "--- All vendors ---"
+	TYPE_RECENT	= -2
 
 	def __init__(self, parent):
 		QDialog.__init__(self, parent)
 		self.setWindowTitle("Select chip")
 		self.setLayout(QGridLayout(self))
 
+		self.recentIDs = recentChipIDs()
+
 		groupBox = QGroupBox("Chip type", self)
 		groupBox.setLayout(QGridLayout(groupBox))
+		self.recentRadio = QRadioButton("Recently used (%d)" % len(self.recentIDs), groupBox)
+		self.recentRadio.setEnabled(bool(self.recentIDs))
+		groupBox.layout().addWidget(self.recentRadio, 0, 0)
 		self.allRadio = QRadioButton("All types", groupBox)
-		self.allRadio.setChecked(True)
-		groupBox.layout().addWidget(self.allRadio, 0, 0)
+		groupBox.layout().addWidget(self.allRadio, 1, 0)
 		self.mcuRadio = QRadioButton("Microcontrollers", groupBox)
-		groupBox.layout().addWidget(self.mcuRadio, 1, 0)
+		groupBox.layout().addWidget(self.mcuRadio, 2, 0)
 		self.epromRadio = QRadioButton("EPROMs", groupBox)
-		groupBox.layout().addWidget(self.epromRadio, 2, 0)
+		groupBox.layout().addWidget(self.epromRadio, 3, 0)
 		self.eepromRadio = QRadioButton("EEPROMs", groupBox)
-		groupBox.layout().addWidget(self.eepromRadio, 3, 0)
+		groupBox.layout().addWidget(self.eepromRadio, 4, 0)
 		self.galRadio = QRadioButton("PALs / GALs", groupBox)
-		groupBox.layout().addWidget(self.galRadio, 4, 0)
+		groupBox.layout().addWidget(self.galRadio, 5, 0)
 		self.sramRadio = QRadioButton("Static RAM", groupBox)
-		groupBox.layout().addWidget(self.sramRadio, 5, 0)
+		groupBox.layout().addWidget(self.sramRadio, 6, 0)
 		self.logicRadio = QRadioButton("Logic chips", groupBox)
-		groupBox.layout().addWidget(self.logicRadio, 6, 0)
+		groupBox.layout().addWidget(self.logicRadio, 7, 0)
 		self.showBroken = QCheckBox("Show broken implementations", groupBox)
-		groupBox.layout().addWidget(self.showBroken, 7, 0)
-		self.layout().addWidget(groupBox, 0, 0, 2, 2)
+		groupBox.layout().addWidget(self.showBroken, 8, 0)
+		self.layout().addWidget(groupBox, 0, 0, 3, 2)
+		if self.recentIDs:
+			self.recentRadio.setChecked(True)
+		else:
+			self.allRadio.setChecked(True)
+
+		self.searchEdit = QLineEdit(self)
+		self.searchEdit.setPlaceholderText("Search chips (part of name, ID or vendor)...")
+		self.searchEdit.setClearButtonEnabled(True)
+		self.layout().addWidget(self.searchEdit, 2, 2, 1, 4)
 
 		l = QLabel("Vendor:", self)
 		self.layout().addWidget(l, 0, 2, 1, 2)
@@ -2213,10 +2248,11 @@ class ChipSelectDialog(QDialog):
 		self.layout().addWidget(self.chipList, 1, 4, 1, 2)
 
 		self.okButton = QPushButton("&Ok", self)
-		self.layout().addWidget(self.okButton, 2, 0, 1, 3)
+		self.okButton.setDefault(True)
+		self.layout().addWidget(self.okButton, 3, 0, 1, 3)
 
 		self.cancelButton = QPushButton("&Cancel", self)
-		self.layout().addWidget(self.cancelButton, 2, 3, 1, 3)
+		self.layout().addWidget(self.cancelButton, 3, 3, 1, 3)
 
 		self.okButton.released.connect(self.accept)
 		self.cancelButton.released.connect(self.reject)
@@ -2224,28 +2260,73 @@ class ChipSelectDialog(QDialog):
 		self.chipList.itemSelectionChanged.connect(self.chipSelectionChanged)
 		self.chipList.itemDoubleClicked.connect(self.accept)
 		self.showBroken.stateChanged.connect(self.typeToggled)
-		for radio in (self.allRadio, self.mcuRadio, self.epromRadio,
+		for radio in (self.recentRadio, self.allRadio, self.mcuRadio, self.epromRadio,
 			      self.eepromRadio, self.galRadio,
 			      self.sramRadio, self.logicRadio):
 			radio.toggled.connect(self.typeToggled)
+		self.searchEdit.textChanged.connect(self.searchChanged)
+		self.searchEdit.installEventFilter(self)
+		# Chip names are long: give the chip list most of the width
+		for col, stretch in ((0, 0), (1, 0), (2, 1), (3, 1), (4, 3), (5, 3)):
+			self.layout().setColumnStretch(col, stretch)
+		self.resize(900, 460)
 
+		self.__updateVendorList()
+		self.__updateChipList()
+		self.searchEdit.setFocus()
+
+	def eventFilter(self, obj, e):
+		# Up/Down in the search box move through the chip list
+		if obj is self.searchEdit and e.type() == QEvent.Type.KeyPress and \
+		   e.key() in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+			row = self.chipList.currentRow() + (1 if e.key() == Qt.Key.Key_Down else -1)
+			if 0 <= row < self.chipList.count():
+				self.chipList.setCurrentRow(row)
+			return True
+		return QDialog.eventFilter(self, obj, e)
+
+	def __searchTerms(self):
+		return str(self.searchEdit.text()).lower().split()
+
+	def __matchesSearch(self, d):
+		terms = self.__searchTerms()
+		if not terms:
+			return True
+		hay = " ".join([ d.description, d.chipID ] + list(d.chipVendors)).lower()
+		return all(t in hay for t in terms)
+
+	def __candidates(self, selType):
+		"Chip descriptors for the selected type (recent list keeps its order)."
+		if selType == self.TYPE_RECENT:
+			byID = { d.chipID: d for d in getRegisteredChips() }
+			chips = [ byID[c] for c in self.recentIDs if c in byID ]
+		else:
+			chips = [ d for d in getRegisteredChips()
+				  if d.chipType == selType or selType == -1 ]
+		if self.showBroken.checkState() != Qt.CheckState.Checked:
+			chips = [ d for d in chips if not d.broken ]
+		return [ d for d in chips if d.chipType != ChipDescription.TYPE_INTERNAL ]
+
+	def searchChanged(self, text):
+		# Searching within the short recent list would hide most matches.
+		if text.strip() and self.recentRadio.isChecked():
+			self.allRadio.setChecked(True)	# triggers typeToggled
+			return
 		self.__updateVendorList()
 		self.__updateChipList()
 
 	def __updateVendorList(self):
 		previousVendor = self.__getSelectedVendor()
 		selType = self.__getSelectedChipType()
-		vendors = getRegisteredVendors()
+		cands = [ d for d in self.__candidates(selType) if self.__matchesSearch(d) ]
+		vendors = {}
+		for d in cands:
+			for v in d.chipVendors:
+				vendors.setdefault(v, []).append(d)
 		self.vendorList.clear()
 		QListWidgetItem(self.ALL_VENDORS, self.vendorList)
 		for vendorName in list(vendors.keys()):
 			descriptors = vendors[vendorName]
-			if self.showBroken.checkState() != Qt.CheckState.Checked:
-				descriptors = [d for d in descriptors if not d.broken]
-			descriptors = [d for d in descriptors if (d.chipType == selType or selType == -1) and\
-						       (d.chipType != ChipDescription.TYPE_INTERNAL)]
-			if not descriptors:
-				continue
 			item = QListWidgetItem(vendorName, self.vendorList)
 			item.setData(Qt.ItemDataRole.UserRole, descriptors)
 		self.vendorList.sortItems()
@@ -2269,20 +2350,18 @@ class ChipSelectDialog(QDialog):
 		selType = self.__getSelectedChipType()
 		selVendor = self.__getSelectedVendor()
 		self.chipList.clear()
-		for descriptor in getRegisteredChips():
-			if descriptor.broken and\
-			   self.showBroken.checkState() != Qt.CheckState.Checked:
+		for descriptor in self.__candidates(selType):
+			if selVendor and selVendor != self.ALL_VENDORS and \
+			   selVendor not in descriptor.chipVendors:
 				continue
-			if descriptor.chipType != selType and selType != -1:
-				continue
-			if descriptor.chipType == ChipDescription.TYPE_INTERNAL:
-				continue
-			if selVendor != self.ALL_VENDORS and selVendor not in descriptor.chipVendors:
+			if not self.__matchesSearch(descriptor):
 				continue
 			item = QListWidgetItem(self.__descriptorText(descriptor),
 					       self.chipList)
 			item.setData(Qt.ItemDataRole.UserRole, descriptor)
-		self.chipList.sortItems()
+			item.setToolTip("Chip ID: %s" % descriptor.chipID)
+		if selType != self.TYPE_RECENT:
+			self.chipList.sortItems()
 		if previousChip:
 			items = self.chipList.findItems(self.__descriptorText(previousChip),
 							Qt.MatchFlag.MatchExactly)
@@ -2292,6 +2371,7 @@ class ChipSelectDialog(QDialog):
 				self.chipList.setCurrentRow(0)
 		else:
 			self.chipList.setCurrentRow(0)
+		self.chipSelectionChanged()
 
 	def typeToggled(self, unused):
 		self.__updateVendorList()
@@ -2311,7 +2391,10 @@ class ChipSelectDialog(QDialog):
 		return str(item.text())
 
 	def __getSelectedChipType(self):
-		# Returns ChipDescription.TYPE_... or -1 if all are selected
+		# Returns ChipDescription.TYPE_..., -1 if all are selected,
+		# or TYPE_RECENT for the recently used list
+		if self.recentRadio.isChecked():
+			return self.TYPE_RECENT
 		for (typeId, radioButton) in (
 				(ChipDescription.TYPE_MCU,	self.mcuRadio),
 				(ChipDescription.TYPE_EPROM,	self.epromRadio),
@@ -2968,6 +3051,10 @@ class MainWindow(QMainWindow):
 		if not chipDescription:
 			return
 		self.currentChipDescription = chipDescription
+		try:
+			addRecentChipID(chipDescription.chipID)
+		except Exception:
+			pass	# settings storage unavailable: not worth failing over
 		return self.runOperation(Operation(Operation.OP_INITCHIP,
 						   HwThread.TASK_INITCHIP,
 						   chipDescription.chipID))

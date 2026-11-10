@@ -191,6 +191,8 @@ Status: the port test passes on a real 8755 in a TOP2049 (about 1 second) and fa
 - **JEDEC load and save.** "Load buffer" and "Save buffer" get a *JEDEC fuse file (\*.jed)* filter when a GAL is selected.
 - **Fuse-level verify.** For GALs, "Verify" compares the actual fuses rather than file bytes. A `.jed` from GALasm and the chip's own readout have different headers but are the same fuse map. A mismatch reports something like "*1 of 5892 fuses differ, first at fuse 5*".
 - **Verify shows which bytes are wrong.** When a verify of an EPROM, EEPROM, PROM or RAM image fails, the GUI switches to that buffer tab, highlights every differing byte in red (hex and ASCII columns), and moves the cursor to the first one. The console lists the count and the first addresses. Hover over a highlighted byte to get a pop-up with the chip value, the buffer value and their XOR in hex and binary, with the wrong bits marked (e.g. "*Differing bits: D1, D3*"). The same details appear in a line under the hex view for the byte under the mouse, or the byte at the cursor, so clicking or arrowing onto a red byte works too. Editing a byte to match removes its mark; loading new data or a passing verify clears them all.
+- **Chip selection: recently used chips and search.** The "Select chip" dialog has a **"Recently used"** list of the last 10 chips you selected, newest first. When there's any history it opens on this list, with the last chip preselected. A **search box** narrows the list as you type. It matches any part of the chip name, chip ID or vendor, ignoring case, and several words must all match (e.g. `lattice 22`). The Up/Down keys move through the results and Enter selects. The history is stored per user (in the registry on Windows).
+- **Long chip comments wrap.** On the "chip info" tab, long texts such as the 8755 comment now wrap onto more lines instead of setting the window's minimum width.
 - **Unit-test button in the main toolbar.** For chips with a unit-test (like the 8755), "Run unit-test" now sits right of "Verify all" instead of alone in the right-hand toolbar. The right-hand toolbar holds only write actions and is hidden for read-only chips.
 - **Autorun on read-only chips.** "Verify selected memories" picked memories by their "Write …" tick boxes, so on a read-only chip it verified nothing and still reported success. Read-only memories are now verified too. On read-only chips the box is labelled "Verify chip against buffer" and is unticked by default, so Autorun runs just the unit-test unless you tick it.
 - **Autorun no longer loops.** The Run button used to start over after the last step with "*Please insert a new chip…*". A new **"Repeat with next chip"** checkbox, unticked by default, controls this:
@@ -316,6 +318,7 @@ python -I tests/gui_fuse_test.py "%CD%" examples
 python -I tests/gui_autorun_test.py "%CD%"
 python -I tests/gui_loadtarget_test.py "%CD%"
 python -I tests/gui_verify_test.py "%CD%"
+python -I tests/gui_chipselect_test.py "%CD%"
 ```
 
 - **`gal_sim_test.py`** drives `gal.py` through a fake TOP2049 into simulated GAL16V8, GAL20V8 and GAL22V10 chips. Each is simulated twice: once as a chip that samples data on the rising clock edge, once on the falling edge.
@@ -326,7 +329,7 @@ python -I tests/gui_verify_test.py "%CD%"
   - the FPGA never drives the pin carrying VPP, VCC or GND.
 
   It reproduced the real off-by-one failure before that fix.
-- **`gui_*_test.py`** run the real Qt widgets offscreen. They cover the GAL fuse tab and verify, Autorun single-run and repeat, the Load/Save buffer targets, and the highlighted bytes and hover pop-up after a failed verify.
+- **`gui_*_test.py`** run the real Qt widgets offscreen. They cover the GAL fuse tab and verify, Autorun single-run and repeat, the Load/Save buffer targets, the highlighted bytes and hover pop-up after a failed verify, and the chip selection dialog's recent list and search.
 
 ---
 
