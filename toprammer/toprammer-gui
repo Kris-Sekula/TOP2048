@@ -2357,6 +2357,8 @@ class TopToolBar(QToolBar):
 		a.setEnabled(chipSupportFlags != 0)
 		a = self.addAction(getIcon("verify"), "Verify all", mainWindow.verifyChip)
 		a.setEnabled(chipSupportFlags != 0)
+		if chipSupportFlags & Chip.SUPPORT_TEST:
+			self.addAction(getIcon("test"), "Run unit-test", mainWindow.runTest)
 
 class RightToolBar(QToolBar):
 	def __init__(self, mainWindow):
@@ -2380,8 +2382,8 @@ class RightToolBar(QToolBar):
 			self.addAction(getIcon("memory"), "Write RAM", mainWindow.writeRam)
 		if chipSupportFlags & Chip.SUPPORT_LOCKWRITE:
 			self.addAction(getIcon("lock"), "Write lockbits", mainWindow.writeChipLockbits)
-		if chipSupportFlags & Chip.SUPPORT_TEST:
-			self.addAction(getIcon("test"), "Run unit-test", mainWindow.runTest)
+		# Read-only chips have no write actions: don't show an empty bar.
+		self.setVisible(bool(self.actions()))
 
 class AutorunWidget(QDockWidget):
 	def __init__(self, mainWindow):
@@ -2405,7 +2407,12 @@ class AutorunWidget(QDockWidget):
 			return (checkbox, row)
 		return (None, row)
 
+	WRITE_FLAGS = (Chip.SUPPORT_ERASE | Chip.SUPPORT_PROGMEMWRITE |
+		       Chip.SUPPORT_EEPROMWRITE | Chip.SUPPORT_RAMWRITE |
+		       Chip.SUPPORT_FUSEWRITE | Chip.SUPPORT_LOCKWRITE)
+
 	def setup(self, chipSupportFlags):
+		self.chipSupportFlags = chipSupportFlags
 		self.setWidget(QWidget(self))
 		self.widget().show()
 		self.widget().setLayout(QGridLayout(self.widget()))
@@ -2429,9 +2436,13 @@ class AutorunWidget(QDockWidget):
 		(self.fusesCheckBox, row) = self.__addCheckBox(row,
 				chipSupportFlags & Chip.SUPPORT_FUSEWRITE,
 				"Write fuses", True)
+		# Read-only chips have nothing to write, so "verify" means comparing
+		# the chip with the buffer; off by default (the buffer may be empty).
+		readOnly = not (chipSupportFlags & self.WRITE_FLAGS)
 		(self.verifyCheckBox, row) = self.__addCheckBox(row,
 				chipSupportFlags != 0,
-				"Verify selected memories", True)
+				"Verify chip against buffer" if readOnly else
+				"Verify selected memories", not readOnly)
 		(self.lockbitsCheckBox, row) = self.__addCheckBox(row,
 				chipSupportFlags & Chip.SUPPORT_LOCKWRITE,
 				"Write lock bits", False)
@@ -2576,13 +2587,18 @@ class AutorunWidget(QDockWidget):
 		return False
 
 	def __verifySelectedMemories(self):
-		def checked(cb):
-			return cb and (cb.checkState() == Qt.CheckState.Checked)
+		flags = self.chipSupportFlags
+		def selected(cb, readFlag):
+			# A memory is verified if its "Write ..." box is ticked, or, when
+			# the chip can only read it (no write box), whenever it's readable.
+			if cb is not None:
+				return cb.checkState() == Qt.CheckState.Checked
+			return bool(flags & readFlag)
 		return self.mainWindow.verifySelectedMemories(
-			verifyProgmem = checked(self.progmemCheckBox),
-			verifyEEPROM = checked(self.eepromCheckBox),
-			verifyFuse = checked(self.fusesCheckBox),
-			verifyRAM = checked(self.ramCheckBox))
+			verifyProgmem = selected(self.progmemCheckBox, Chip.SUPPORT_PROGMEMREAD),
+			verifyEEPROM = selected(self.eepromCheckBox, Chip.SUPPORT_EEPROMREAD),
+			verifyFuse = selected(self.fusesCheckBox, Chip.SUPPORT_FUSEREAD),
+			verifyRAM = selected(self.ramCheckBox, Chip.SUPPORT_RAMREAD))
 
 class ProgrammerSelectDialog(QDialog):
 	def __init__(self, parent=None):

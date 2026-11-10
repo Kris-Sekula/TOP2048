@@ -32,7 +32,16 @@ class MW(QMainWindow):
         return True               # hardware op started OK; completion comes later
     def eraseChip(s): return s._act("erase")
     def writeChipFuses(s): return s._act("write")
-    def verifySelectedMemories(s, **k): return s._act("verify")
+    def verifySelectedMemories(s, **k):
+        s.verifyArgs = k; return s._act("verify")
+    def runTest(s): return s._act("test")
+    def verifyChip(s): return True
+    def readChip(s): return True
+    def loadBuffer(s): return True
+    def saveBuffer(s): return True
+    def startUnitest(s): return True
+    def selectChip(s): return True
+    def eraseChip(s): return s._act("erase")
     def writeChipLockbits(s): return s._act("lock")
 
 def drive(ar):
@@ -66,4 +75,32 @@ mw.writeChipFuses = lambda: False
 mw.done.clear(); ar.startRun(); drive(ar)
 assert prompts == ["CRITICAL"] and not ar.isRunning()
 print("failure    : aborted with error message as before")
+
+# 4) read-only chip with a unit-test (8755): test runs; verify is off by
+#    default and, when ticked, really compares the EEPROM buffer
+mw = MW(); mw.currentChipDescription = ChipDescription.findOne("i8755")
+f8755 = mw.currentChipDescription.chipImplClass.getSupportFlags()
+ar = g.AutorunWidget(mw); ar.setup(f8755)
+assert ar.testCheckBox is not None and ar.testCheckBox.checkState() == Qt.CheckState.Checked
+assert ar.verifyCheckBox.text() == "Verify chip against buffer"
+assert ar.verifyCheckBox.checkState() == Qt.CheckState.Unchecked
+prompts.clear(); ar.startRun(); drive(ar)
+assert mw.done == ["test"], mw.done
+ar.verifyCheckBox.setCheckState(Qt.CheckState.Checked)
+mw.done.clear(); ar.startRun(); drive(ar)
+assert mw.done == ["test", "verify"] and mw.verifyArgs["verifyEEPROM"] is True, (mw.done, mw.verifyArgs)
+print("8755       :", mw.done, "-> unit-test in Autorun, verify compares the (E)EPROM buffer")
+
+# 5) toolbars: "Run unit-test" sits right of "Verify all"; the right-hand
+#    bar (write actions) is hidden when the chip has none
+tt = g.TopToolBar(mw); rt = g.RightToolBar(mw)
+tt.setup(f8755); rt.setup(f8755)
+names = [a.text() for a in tt.actions() if a.text()]
+assert names[names.index("Verify all") + 1] == "Run unit-test", names
+assert not rt.actions() and not rt.isVisibleTo(mw)
+fgal = ChipDescription.findOne("gal22v10").chipImplClass.getSupportFlags()
+tt.setup(fgal); rt.setup(fgal)
+assert "Run unit-test" not in [a.text() for a in tt.actions()]
+assert [a.text() for a in rt.actions()] == ["Erase", "Write fuses"] and rt.isVisibleTo(mw)
+print("toolbars   : unit-test right of Verify all; empty write bar hidden")
 print("AUTORUN TESTS PASSED")
