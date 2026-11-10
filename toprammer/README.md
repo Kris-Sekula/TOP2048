@@ -168,7 +168,7 @@ python toprammer -c i8755 -T              :: test the I/O ports
 
 The FPGA only ever drives a port pin whose DDR bit is 0, and releases the pins before any DDR bit becomes 1, so it never fights the chip. A failing chip gets one line per bad pin, for example `PA3: stuck at 0 / does not drive high as output; reads wrong as input`.
 
-Status: tested against a pin-level 8755A model (`tests/i8755_sim_test.py`), which checks the ROM read, the port test on a good chip, and that a stuck pin, a dead DDR bit and PA/PB shorts are each reported on the right pins only. Not yet tried on a real chip.
+Status: the port test passes on a real 8755 in a TOP2049 (about 1 second) and fails with an empty socket. On that chip, a port set as output reads back the same value that's on its pins. The pin-level model (`tests/i8755_sim_test.py`) also checks the ROM read, and that a stuck pin, a dead DDR bit and PA/PB shorts are each reported on the right pins only. The ROM dump has not yet been compared against a chip with known contents.
 
 ### 4. GUI changes (`toprammer-gui`)
 
