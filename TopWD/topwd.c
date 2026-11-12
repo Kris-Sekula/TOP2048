@@ -1,6 +1,6 @@
 /*
  * TopWD - user-mode replacement for Jungo WinDriver 6 (windrvr6.sys)
- *         for TopWin / TOP853 / TOP2004 / TOP2049 USB programmers
+ *         for TopWin and the TOP2049 USB programmer (TOP853/TOP2004 untested)
  *         (USB VID_2471 & PID_0853) on 64-bit Windows.
  *
  * Build result: version.dll (32-bit). Drop it next to TopWinEn.exe.

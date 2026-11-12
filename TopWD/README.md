@@ -1,6 +1,6 @@
-# TopWD — TOP853 / TOP2004 / TOP2049 programmers on 64-bit Windows
+# TopWD — TopWin for the TOP2049 programmer on 64-bit Windows
 
-Lets you use **TopWin** with the TOP-series USB universal programmers (USB ID `VID_2471 & PID_0853`) on **64-bit Windows 10/11**. You don't need the original Jungo **WinDriver** kernel driver (`windrvr6.sys`), test-signing mode or any changes to Secure Boot.
+Lets you use **TopWin** with the **TOP2049** USB universal programmer (USB ID `VID_2471 & PID_0853`) on **64-bit Windows 10/11**. Other TOP-series models (TOP853, TOP2004) also use TopWin and may work too, but they're untested and may have different USB IDs. You don't need the original Jungo **WinDriver** kernel driver (`windrvr6.sys`), test-signing mode or any changes to Secure Boot.
 
 TopWD is a small 32-bit DLL that you drop next to `TopWinEn.exe`. It **replaces the WinDriver 6.03 kernel driver in user mode** and sends the USB traffic through Microsoft's built-in, signed **WinUSB** driver.
 
@@ -59,7 +59,7 @@ TopWinEn.exe ──(WinDriver 6.03 user lib)──► CreateFile/DeviceIoControl
    - Choose **Options → List All Devices**.
    - Select the device with USB ID **2471 0853**. It may show as "TOP Programmer" or as an unknown device.
    - Set the driver to **WinUSB**, then click **Install Driver** (or **Replace Driver**).
-3. **Copy `version.dll`** from the [Releases](https://github.com/Kris-Sekula/TOP2048/releases) page into the TopWin folder, next to `TopWinEn.exe`.
+3. **Copy `version.dll`** from the [Releases](https://github.com/Kris-Sekula/TOP2049/releases) page into the TopWin folder, next to `TopWinEn.exe`.
 4. **Start `TopWinEn.exe`** as usual.
 
 Don't run `LoadDrv.exe` ("Reload USB driver"), because it tries to install the old driver. To uninstall TopWD, delete `version.dll` from the TopWin folder.
@@ -163,8 +163,8 @@ TopWin is a **32-bit** program, so TopWD must be built as a **32-bit (x86) DLL**
    ```
 4. Get the source and build:
    ```sh
-   git clone https://github.com/Kris-Sekula/TOP2048.git
-   cd TOP2048/TopWD
+   git clone https://github.com/Kris-Sekula/TOP2049.git
+   cd TOP2049/TopWD
    CC=gcc STRIP=strip ./build.sh
    ```
    In the MINGW32 shell, `gcc` is already the 32-bit compiler, which is why `CC=gcc` is set.
@@ -175,8 +175,8 @@ Debian/Ubuntu:
 
 ```sh
 sudo apt install gcc-mingw-w64-i686 git
-git clone https://github.com/Kris-Sekula/TOP2048.git
-cd TOP2048/TopWD
+git clone https://github.com/Kris-Sekula/TOP2049.git
+cd TOP2049/TopWD
 ./build.sh
 ```
 

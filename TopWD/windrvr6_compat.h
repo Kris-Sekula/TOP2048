@@ -1,6 +1,6 @@
 /*
  * windrvr6_compat.h - the subset of the Jungo WinDriver 6.03 user/kernel
- * interface used by TopWin (TOP853/TOP2004/TOP2049 programmer software).
+ * interface used by TopWin (TOP2049 and other TOP-series programmer software).
  *
  * Layouts were recovered from TopWinEn.exe (statically linked WinDriver
  * 6.03 "wdu_lib" + "windrvr_events" code) and cross-checked against the

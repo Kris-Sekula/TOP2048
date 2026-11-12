@@ -1,6 +1,6 @@
 # toprammer for Windows 10/11 x64, with support for more chips
 
-This folder is a copy of [**toprammer**](https://github.com/mbuesch/toprammer) (upstream commit `cac51c0`, imported with its full history), Michael Büsch's open-source software for **TOP2049**-family USB universal programmers (USB ID `VID_2471 PID_0853`, also sold as TOP853 / TOP2048), with these changes:
+This folder is a copy of [**toprammer**](https://github.com/mbuesch/toprammer) (upstream commit `cac51c0`, imported with its full history), Michael Büsch's open-source software for **TOP2049**-family USB universal programmers, with these changes. Everything was tested on a TOP2049 with USB ID `VID_2471 PID_0853`. Upstream toprammer also lists the TOP853, but under a different USB ID (`2472:0103`); it hasn't been tested with this fork.
 
 1. **Makes toprammer work on 64-bit Windows 10/11**, using Microsoft's signed WinUSB driver. There are no kernel drivers to install, no test-signing mode, and no libusb.
 2. **Adds GAL programming**: GAL16V8 (A/B/D), GAL20V8 (A/B) and GAL22V10, from both the command line and the GUI, using standard JEDEC (`.jed`) fuse files.
@@ -237,8 +237,8 @@ Status: the port test passes on a real 8755 in a TOP2049 (about 1 second) and fa
    If you also use TopWin with TopWD, it needs the same WinUSB driver, so this step only has to be done once.
 4. **toprammer.** Clone this repository. Everything needed is in this `toprammer` folder, and nothing else has to be downloaded:
    ```
-   git clone https://github.com/Kris-Sekula/TOP2048.git
-   cd TOP2048\toprammer
+   git clone https://github.com/Kris-Sekula/TOP2049.git
+   cd TOP2049\toprammer
    ```
    Files changed or added compared with upstream toprammer:
    ```
