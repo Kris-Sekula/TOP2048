@@ -6,8 +6,9 @@ This folder is a copy of [**toprammer**](https://github.com/mbuesch/toprammer) (
 2. **Adds GAL programming**: GAL16V8 (A/B/D), GAL20V8 (A/B) and GAL22V10, from both the command line and the GUI, using standard JEDEC (`.jed`) fuse files.
 3. **Adds bipolar PROM reading** for the Tesla MH74S571 / 74S571 (512 × 4).
 4. **Adds Intel 8755 / 8755A / 8355 support**: reading the 2 KB ROM, and a unit-test of the two 8-bit I/O ports.
-5. **Improves the GUI:** after a failed verify, the wrong bytes are highlighted, with a pop-up showing chip and buffer values in hex and binary. Also fixes to the fuse tab, Autorun and Load buffer.
-6. **Removes the deprecated `pkg_resources` dependency.**
+5. **Adds a RAM test for 4K × 1 static RAMs** (TI TMS4044 / TMS40L44, Intel 2147).
+6. **Improves the GUI:** after a failed verify, the wrong bytes are highlighted, with a pop-up showing chip and buffer values in hex and binary. Also fixes to the fuse tab, Autorun and Load buffer.
+7. **Removes the deprecated `pkg_resources` dependency.**
 
 All the new chip support uses toprammer's existing generic "unitest" FPGA configuration, so no FPGA design changes were needed.
 
@@ -32,6 +33,7 @@ Programmer: TOP2049-compatible unit, firmware string `top2049 ver1.08`, on Windo
 | Tesla MH74S571 (512 × 4 bipolar PROM) | Read (`-c mh74s571 -e`) | ✅ Reads correctly |
 | Intel 8755 | I/O port unit-test (`-c i8755 -T`) | ✅ Passes; fails with an empty socket |
 | Intel 8755 / 8755A / 8355 | ROM read (`-c i8755 -e`) | Simulator only so far |
+| TI TMS4044 / Intel 2147 (4K × 1 SRAM) | RAM test (`-c tms4044 -T`) | Simulator only so far |
 
 The original EPROM support also works on Windows through the new USB backend.
 
@@ -179,6 +181,30 @@ The FPGA only ever drives a port pin whose DDR bit is 0, and releases the pins b
 
 Status: the port test passes on a real 8755 in a TOP2049 (about 1 second) and fails with an empty socket. On that chip, a port set as output reads back the same value that's on its pins. The pin-level model (`tests/i8755_sim_test.py`) also checks the ROM read, and that a stuck pin, a dead DDR bit and PA/PB shorts are each reported on the right pins only. The ROM dump has not yet been compared against a chip with known contents.
 
+### 5a. 4K × 1 static RAM test: TMS4044 / TMS40L44 / 2147 (`libtoprammer/chips/tms4044.py`)
+
+Chip ID **`tms4044`** tests 4096 × 1 static RAMs: the TI TMS4044 and TMS40L44 and the pin-compatible Intel 2147. Run it with `-T` on the command line, or with "Run unit-test" in the GUI or Autorun. It uses the generic `unitest` FPGA configuration. The FPGA drives A0–A11, D, /W and /S and only samples Q. Data in and data out are separate pins, so the FPGA and the chip never share a pin.
+
+The test runs these steps in order:
+1. **Address lines.** For each of A0–A11, addresses 0 and 2ⁿ must hold different values. If a line is open, stuck, shorted or badly seated, both addresses reach the same cell, and the line is reported by name, e.g. "*address line A7 (pin 16) not working*".
+2. **March C-** (10 operations per cell): writes 0 everywhere, then four passes (up r0/w1, up r1/w0, down r0/w1, down r1/w0), then reads 0 everywhere. It finds stuck cells, cells that can't change in one direction, address decoder faults and most coupling faults, where writing one cell disturbs another.
+3. **Checkerboard and its inverse**, each read back after a pause of 1 s by default (option `-C retention_pause=<seconds>`), to catch cells that don't hold their data.
+
+A failure lists the number of bad cells and the first 12 failing addresses, each with the step that failed and the expected and actual values. An empty socket, or a chip inserted the wrong way round, is reported as such. The test is about 136,000 FPGA commands, with reads batched 64 at a time.
+
+- **Pinout** (TI TMS4044 data sheet):
+
+  | 1–6 A0–A5 | 7 Q | 8 /W | 9 VSS | 10 /S | 11 D | 12–17 A11–A6 | 18 VCC |
+  |---|---|---|---|---|---|---|---|
+
+  Pin 1 goes to ZIF pin 11 (VCC on ZIF 38, GND on ZIF 19).
+
+```
+python toprammer -c tms4044 -T
+```
+
+Status: tested against a pin-level SRAM model (`tests/tms4044_sim_test.py`) that injects a stuck cell, a cell that can't change from 0 to 1, open A0 and A7 lines, a coupling fault, a leaky cell and an empty socket. Each is reported correctly. Not yet tried on a real chip.
+
 ### 6. GUI changes (`toprammer-gui`)
 
 - **GAL fuse view.** The "fuse bits" tab was built for AVR-style chips: it showed one checkbox per bit and refused any data over 32 bytes, so loading a GAL file failed. With a GAL selected, the tab now shows the fuse map as **address ranges and bit values**:
@@ -314,6 +340,7 @@ These run without a programmer:
 python tests/gal_sim_test.py .                 # GAL algorithms vs. pin-level GAL simulators
 python tests/prom74s571_sim_test.py .          # 74S571 PROM reader vs. a pin-level PROM model
 python tests/i8755_sim_test.py .               # 8755A ROM reader + I/O port test vs. a pin-level model
+python tests/tms4044_sim_test.py .             # 4K x 1 SRAM test vs. a faulty-RAM model
 python -I tests/gui_fuse_test.py "%CD%" examples
 python -I tests/gui_autorun_test.py "%CD%"
 python -I tests/gui_loadtarget_test.py "%CD%"

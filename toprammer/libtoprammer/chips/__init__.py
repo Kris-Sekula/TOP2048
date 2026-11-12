@@ -24,5 +24,6 @@ from .microchip16 import *
 from .microchip8 import *
 from .prom74s571 import *
 from .i8755 import *
+from .tms4044 import *
 from .unitest import *
 from .w29ee011dip32 import *
